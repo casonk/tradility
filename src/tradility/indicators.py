@@ -71,6 +71,8 @@ def vwap_signal(last_price: float | None, vwap_value: float | None, tol: float =
         return "unknown"
     if pd.isna(last_price) or pd.isna(vwap_value):
         return "unknown"
+    if vwap_value == 0:
+        return "unknown"
     ratio = (last_price - vwap_value) / vwap_value
     if abs(ratio) <= tol:
         return "at"
