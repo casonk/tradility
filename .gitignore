@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+.env
+
+# Generated outputs — never commit analysis results
+exports/
+
+# Local-only files
+CHATHISTORY.md
+REFS-LOCAL.md
+
+# Editor
+.vscode/
+.idea/
+*.swp

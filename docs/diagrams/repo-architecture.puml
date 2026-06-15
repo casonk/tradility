@@ -1,0 +1,22 @@
+@startuml repo-architecture
+skinparam componentStyle rectangle
+
+package "tradility" {
+  [cli.py] as CLI
+  [analyze.py] as Analyze
+  [fetch.py] as Fetch
+  [indicators.py] as Indicators
+}
+
+database "holdings-aggregate.json" as Holdings
+database "tradility-analysis.json" as Output
+cloud "yfinance / Yahoo Finance" as YF
+
+CLI --> Analyze : analyze_tickers()
+Analyze --> Holdings : load tickers
+Analyze --> Fetch : fetch_ohlcv()
+Fetch --> YF : HTTP
+Analyze --> Indicators : rsi(), vwap()
+Analyze --> Output : write JSON
+
+@enduml
