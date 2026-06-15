@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradility"
+version = "0.1.0"
+description = "Technical analytics on investment ticker holdings and watchlists."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Cason Konzer", email = "casonk@umich.edu" },
+]
+license = { text = "MIT" }
+keywords = ["finance", "technical-analysis", "rsi", "vwap", "yfinance", "investing"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Office/Business :: Financial",
+  "Topic :: Utilities",
+  "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    "yfinance>=0.2",
+    "pandas>=2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/casonk/tradility"
+Repository = "https://github.com/casonk/tradility"
+Changelog = "https://github.com/casonk/tradility/blob/main/CHANGELOG.md"
+
+[project.scripts]
+tradility = "tradility.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "dyno_lab @ git+https://github.com/casonk/dyno-lab.git",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",
+    "B008",
+    "SIM108",
+    "SIM117",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
