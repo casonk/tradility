@@ -1,0 +1,26 @@
+@startuml
+title tradility Tooling Integrations
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Monospace
+skinparam componentStyle rectangle
+skinparam linetype ortho
+rectangle ".github/workflows/ci.yml\n1 detected tool" as source_github_workflows_ci_yml #E0F2FE
+rectangle ".github/workflows/secret-scan.yml\n5 detected tools" as source_github_workflows_secret_scan_yml #E0F2FE
+cloud "actions/checkout" as tool_actions_checkout #FEF3C7
+cloud "actions/upload-artifact" as tool_actions_upload_artifact #FEF3C7
+cloud "casonk/.github/.github/workflows/python-ci.yml" as tool_casonk_github_github_workflows_python_ci_yml #FEF3C7
+cloud "curl" as tool_curl #FEF3C7
+cloud "gitleaks/gitleaks-action" as tool_gitleaks_gitleaks_action #FEF3C7
+cloud "tar" as tool_tar #FEF3C7
+source_github_workflows_ci_yml --> tool_casonk_github_github_workflows_python_ci_yml
+source_github_workflows_secret_scan_yml --> tool_actions_checkout
+source_github_workflows_secret_scan_yml --> tool_actions_upload_artifact
+source_github_workflows_secret_scan_yml --> tool_curl
+source_github_workflows_secret_scan_yml --> tool_gitleaks_gitleaks_action
+source_github_workflows_secret_scan_yml --> tool_tar
+note as toolingGraphSummary
+Scanned 2 tooling entrypoints.
+Detected 6 third-party tools.
+end note
+@enduml
