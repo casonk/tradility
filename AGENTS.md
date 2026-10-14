@@ -3,7 +3,7 @@
 ## Purpose
 
 `tradility` is a Python package that computes technical indicators (RSI, VWAP) on investment
-ticker holdings and watchlists. It reads ticker lists from a finance-pipeline
+ticker holdings and watchlists. It reads ticker lists from a finance pipeline's
 `holdings-aggregate.json` export or from an explicit CLI argument, fetches OHLCV price data via
 **yfinance**, and outputs a structured `tradility-analysis.json`.
 
@@ -67,13 +67,13 @@ pytest -q
 - Crypto tickers from Binance use bare symbols (`BTC`). `analyze.py` maps them to Yahoo Finance
   format (`BTC-USD`) for fetching and restores the original symbol in JSON output.
 - `exports/` is gitignored. Never commit generated analysis JSON.
-- The `--holdings` flag reads `holdings-aggregate.json` from the finance-pipeline pipeline.
-  The finance-pipeline repo path is a local reference — record it in `REFS-LOCAL.md`.
+- The `--holdings` flag reads `holdings-aggregate.json` from the local finance pipeline.
+  That pipeline's repo path is a local reference — record it in `REFS-LOCAL.md`.
 
 ## Backlog Data Sources
 
 Planned data source adapters (see BACKLOG.md):
 
 - **Alpha Vantage** — fundamentals and additional technical endpoints
-- **Schwab API** — real-time quotes for equity holdings (reuse finance-pipeline credentials)
+- **Schwab API** — real-time quotes for equity holdings (reuse the finance pipeline's credentials)
 - **Binance API** — native crypto OHLCV (better granularity than Yahoo for crypto tickers)

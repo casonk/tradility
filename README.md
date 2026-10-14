@@ -15,7 +15,7 @@ Fetches OHLCV price data via **yfinance** and computes indicator signals (RSI, V
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
 
-# From a holdings-aggregate.json (finance-pipeline export)
+# From a holdings-aggregate.json (exported by a finance pipeline)
 tradility --holdings /path/to/exports/invest/holdings-aggregate.json \
           --output exports/tradility-analysis.json
 

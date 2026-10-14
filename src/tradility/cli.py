@@ -18,7 +18,7 @@ def main() -> int:
     source.add_argument(
         "--holdings",
         metavar="PATH",
-        help="Path to holdings-aggregate.json (finance-pipeline export).",
+        help="Path to holdings-aggregate.json (exported by a finance pipeline).",
     )
     source.add_argument(
         "--tickers",

@@ -7,7 +7,7 @@
 ### Added
 
 - Initial release: RSI (14-period) and rolling VWAP (20-day) indicators via yfinance
-- `--holdings` flag to load tickers from `holdings-aggregate.json` (finance-pipeline export)
+- `--holdings` flag to load tickers from `holdings-aggregate.json` (exported by a finance pipeline)
 - `--tickers` flag for explicit ticker lists
 - Crypto ticker mapping: bare symbols (BTC) → Yahoo Finance format (BTC-USD) at fetch time
 - RSI signals: oversold / neutral / overbought
