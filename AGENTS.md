@@ -60,6 +60,13 @@ pre-commit run --all-files
 pytest -q
 ```
 
+## Sudo Boundary
+
+Agents cannot run `sudo` in this environment. Complete non-elevated work and
+validation, then give the user the exact elevated command to run if a live
+system change requires it. Do not claim that change was applied until the
+user shares the result.
+
 ## Architecture Notes
 
 - `fetch.py` is the only module that makes network calls. Keep it isolated so indicators and
