@@ -36,7 +36,7 @@ tradility = "tradility.cli:main"
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
-    "dyno_lab @ git+https://github.com/casonk/dyno-lab.git",
+    "dyno-lab>=0.3.0",
 ]
 
 [tool.black]
