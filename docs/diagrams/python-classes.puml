@@ -1,4 +1,4 @@
-@startuml classes_tradility
+@startuml classes_checkout
 set namespaceSeparator none
 class "OHLCVResult" as tradility.fetch.OHLCVResult {
   df
