@@ -7,11 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from tradility.fetch import OHLCVResult, fetch_ohlcv
-from tradility.indicators import rsi, rsi_signal, vwap, vwap_signal
+from tradility.fetch import OHLCVResult, fetch_ohlcv, normalize_history_period
+from tradility.indicators import long_term_trend_signal, rsi, rsi_signal, sma, vwap, vwap_signal
 
 RSI_PERIOD = 14
 VWAP_PERIOD = 20
+SMA_SHORT_PERIOD = 50
+SMA_LONG_PERIOD = 200
 
 
 def _safe_float(value: Any, ndigits: int = 4) -> float | None:
@@ -29,7 +31,7 @@ def _ticker_record(ticker: str, result: OHLCVResult, meta: dict[str, str]) -> di
         "ticker": ticker,
         "name": meta.get("name", ""),
         "asset_class": meta.get("asset_class", ""),
-        "data_source": "yfinance",
+        "data_source": result.source or "unknown",
     }
 
     if not result.ok:
@@ -47,6 +49,9 @@ def _ticker_record(ticker: str, result: OHLCVResult, meta: dict[str, str]) -> di
     vwap_series = vwap(df["High"], df["Low"], df["Close"], df["Volume"], period=VWAP_PERIOD)
     vwap_val = _safe_float(vwap_series.iloc[-1], 4)
 
+    sma_short = _safe_float(sma(df["Close"], SMA_SHORT_PERIOD).iloc[-1], 4)
+    sma_long = _safe_float(sma(df["Close"], SMA_LONG_PERIOD).iloc[-1], 4)
+
     base.update(
         {
             "fetch_status": "ok",
@@ -56,8 +61,13 @@ def _ticker_record(ticker: str, result: OHLCVResult, meta: dict[str, str]) -> di
             f"rsi_{RSI_PERIOD}_signal": rsi_signal(rsi_val),
             f"vwap_{VWAP_PERIOD}": vwap_val,
             f"vwap_{VWAP_PERIOD}_signal": vwap_signal(last_price, vwap_val),
+            f"sma_{SMA_SHORT_PERIOD}": sma_short,
+            f"sma_{SMA_LONG_PERIOD}": sma_long,
+            "long_term_trend": long_term_trend_signal(last_price, sma_short, sma_long),
         }
     )
+    if result.fallback_reason:
+        base["fallback_reason"] = result.fallback_reason
     return base
 
 
@@ -97,7 +107,11 @@ def _to_yf_ticker(ticker: str, asset_class: str) -> str:
 def analyze_tickers(
     tickers: list[str] | None = None,
     holdings_path: Path | None = None,
-    period_days: int = 90,
+    period_days: int | None = None,
+    history_period: str = "5y",
+    source: str = "auto",
+    schwab_access_token: str = "",
+    schwab_token_command: str = "",
 ) -> dict[str, Any]:
     """Run full analysis pipeline.
 
@@ -113,7 +127,21 @@ def analyze_tickers(
     else:
         raise ValueError("Provide either tickers or holdings_path.")
 
-    ohlcv = fetch_ohlcv(ticker_list, period_days=period_days)
+    resolved_period = f"{period_days}d" if period_days is not None else history_period
+    resolved_period = normalize_history_period(resolved_period)
+    schwab_tickers = {
+        ticker
+        for ticker, meta in meta_by_ticker.items()
+        if str(meta.get("asset_class", "")).strip().lower() != "crypto"
+    }
+    ohlcv = fetch_ohlcv(
+        ticker_list,
+        history_period=resolved_period,
+        source=source,
+        schwab_tickers=schwab_tickers,
+        schwab_access_token=schwab_access_token,
+        schwab_token_command=schwab_token_command,
+    )
 
     records = []
     for yf_ticker, meta in meta_by_ticker.items():
@@ -127,13 +155,21 @@ def analyze_tickers(
 
     ok_count = sum(1 for r in records if r.get("fetch_status") == "ok")
     err_count = len(records) - ok_count
+    source_counts: dict[str, int] = {}
+    for record in records:
+        data_source = str(record.get("data_source", "unknown"))
+        source_counts[data_source] = source_counts.get(data_source, 0) + 1
 
     return {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "period_days": period_days,
+        "history_period": resolved_period,
+        "period_days": int(resolved_period[:-1]) if resolved_period.endswith("d") else None,
         "rsi_period": RSI_PERIOD,
         "vwap_period": VWAP_PERIOD,
-        "data_source": "yfinance",
+        "sma_periods": [SMA_SHORT_PERIOD, SMA_LONG_PERIOD],
+        "requested_source": source,
+        "data_source": next(iter(source_counts)) if len(source_counts) == 1 else "mixed",
+        "data_sources": source_counts,
         "ticker_count": len(records),
         "fetch_ok": ok_count,
         "fetch_errors": err_count,

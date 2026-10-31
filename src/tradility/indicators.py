@@ -1,8 +1,29 @@
-"""Technical indicator calculations: RSI and VWAP."""
+"""Technical indicator calculations: RSI, VWAP, and long-term trend."""
 
 from __future__ import annotations
 
 import pandas as pd
+
+
+def sma(close: pd.Series, period: int) -> pd.Series:
+    """Compute a simple moving average over closing prices."""
+    return close.rolling(period, min_periods=period).mean()
+
+
+def long_term_trend_signal(
+    last_price: float | None,
+    sma_short: float | None,
+    sma_long: float | None,
+) -> str:
+    """Classify price and the 50/200-day moving-average relationship."""
+    values = (last_price, sma_short, sma_long)
+    if any(value is None or pd.isna(value) for value in values):
+        return "unknown"
+    if sma_short > sma_long and last_price > sma_long:
+        return "bullish"
+    if sma_short < sma_long and last_price < sma_long:
+        return "bearish"
+    return "mixed"
 
 
 def rsi(close: pd.Series, period: int = 14) -> pd.Series:

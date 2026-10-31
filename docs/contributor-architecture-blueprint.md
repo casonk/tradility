@@ -2,19 +2,19 @@
 
 ## Purpose
 
-`tradility` computes technical indicators (RSI, VWAP) on investment ticker
+`tradility` computes technical indicators (RSI, VWAP, 50/200-day trend) on investment ticker
 holdings and watchlists, outputting a structured JSON for downstream consumers
 (clockwork web dashboard, manual review).
 
 ## Execution Flow
 
 ```
-holdings-aggregate.json  ──┐
-                           ├──▶  analyze.py  ──▶  fetch.py (yfinance)
-explicit --tickers list  ──┘          │
+holdings-aggregate.json  ──┐                              ┌─▶ Schwab Trader API
+                           ├──▶  analyze.py  ──▶  fetch.py ┤
+explicit --tickers list  ──┘          │                   └─▶ yfinance fallback
                                       ▼
                                indicators.py
-                              (rsi, vwap, signals)
+                              (rsi, vwap, SMA, signals)
                                       │
                                       ▼
                           exports/tradility-analysis.json
@@ -26,18 +26,22 @@ explicit --tickers list  ──┘          │
 |---|---|
 | `cli.py` | Argument parsing; orchestrates analyze_tickers call |
 | `analyze.py` | Pipeline: load tickers → fetch → compute → serialize JSON |
-| `fetch.py` | Network isolation; yfinance download; OHLCVResult dataclass |
-| `indicators.py` | Pure math: RSI, VWAP, signal classifiers — no I/O, fully testable |
+| `fetch.py` | Source selection, yfinance download/fallback, OHLCVResult dataclass |
+| `sources/schwab.py` | Schwab access-token command boundary and price-history requests |
+| `indicators.py` | Pure math: RSI, VWAP, SMA, signal classifiers — no I/O, fully testable |
+| `scripts/run_scheduled_analysis.sh` | Locked, non-interactive entry point for Clockwork |
 
 ## Key Design Constraints
 
-- `fetch.py` is the **only** module that makes network calls. Tests mock at this boundary.
+- Network I/O is limited to `fetch.py` and adapters under `sources/`; tests mock at those boundaries.
 - `indicators.py` is stateless; all functions take pandas Series and return Series.
 - `exports/` is gitignored. Generated JSON is never committed.
 - Crypto tickers map to Yahoo Finance format (`BTC` → `BTC-USD`) in `analyze.py` only.
+- OAuth ownership stays outside Tradility. A token command lets the scheduler
+  reuse the governed credential pipeline without persisting secrets here.
 
 ## Planned Extensions (see BACKLOG.md)
 
-- Additional data source adapters under `src/tradility/sources/`
-- Additional indicators in `indicators.py`
-- Clockwork web integration via `GET /api/tradility-analysis`
+- Native Binance and fundamentals/research adapters under `src/tradility/sources/`
+- Credential-pipeline token helper for unattended Schwab refresh
+- Additional volatility, momentum, and volume indicators in `indicators.py`
