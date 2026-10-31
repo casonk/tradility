@@ -86,6 +86,21 @@ package. Use `--source schwab` to fail closed when Schwab is unavailable, or
       "sma_50": 304.12,
       "sma_200": 275.89,
       "long_term_trend": "bullish",
+      "returns": {"1m": 3.21, "3m": 8.42, "1y": 24.18, "3y": 61.3, "5y": 201.7},
+      "high_52w": 320.11,
+      "low_52w": 198.43,
+      "range_position_52w": 94.66,
+      "technical_rating": "buy",
+      "technical_score": 2,
+      "technical_components": {
+        "long_term_trend": 2,
+        "vwap_momentum": 1,
+        "rsi_reversion": -1
+      },
+      "price_history": [
+        {"date": "2021-06-18", "close": 130.46},
+        {"date": "2026-06-15", "close": 313.62}
+      ],
       "fetch_status": "ok",
       "data_source": "schwab"
     }
@@ -117,6 +132,20 @@ Tradility calculates 50- and 200-trading-day simple moving averages. The
 combined signal is `bullish` when the 50-day average is above the 200-day
 average and price is above the 200-day average, `bearish` for the inverse,
 `mixed` otherwise, and `unknown` when history is insufficient.
+
+### Historical performance and technical rating
+
+Each successful ticker includes calendar-period returns for one month, three
+months, one year, three years, and five years; its trailing 52-week high, low,
+and current range position; and a chart-ready closing-price series. Recent
+history stays daily while points older than one year are sampled weekly to keep
+dashboard payloads bounded.
+
+`technical_rating` is a transparent rule-based composite, not analyst
+consensus or investment advice. Long-term trend contributes ±2, price versus
+the rolling 20-day VWAP contributes ±1 as momentum, and oversold/overbought RSI
+contributes ±1 as a mean-reversion signal. The component values are serialized
+in `technical_components` so consumers can explain the label.
 
 ## Scheduled refresh
 
