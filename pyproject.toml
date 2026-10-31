@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tradility"
-version = "0.1.0"
+version = "0.2.0"
 description = "Technical analytics on investment ticker holdings and watchlists."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,7 +12,7 @@ authors = [
   { name = "Cason Konzer", email = "casonk@umich.edu" },
 ]
 license = { text = "MIT" }
-keywords = ["finance", "technical-analysis", "rsi", "vwap", "yfinance", "investing"]
+keywords = ["finance", "technical-analysis", "rsi", "vwap", "schwab", "yfinance", "investing"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
