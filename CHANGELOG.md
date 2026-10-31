@@ -4,6 +4,8 @@
 
 ### Added
 
+- Chart-ready historical closes, calendar-period returns, 52-week range, and a
+  transparent component-based technical rating for stock detail consumers.
 - Schwab Trader API daily price-history adapter with an external token-command
   boundary and explicit per-ticker Yahoo fallback.
 - Five-year default history, 50/200-day simple moving averages, and a combined

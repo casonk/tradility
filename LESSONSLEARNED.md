@@ -26,3 +26,7 @@ Unlike `CHATHISTORY.md`, this file should keep only reusable lessons that should
   Keep OAuth/refresh-token ownership in the governed credential pipeline, pass
   only a short-lived access token across the adapter boundary, and verify each
   research field has supported API access before promising it in Tradility.
+- A derived buy/hold/sell label must name itself as a technical composite,
+  publish its component scores and methodology, and explicitly avoid implying
+  analyst consensus or investment advice. Keep authorized third-party ratings
+  as a separate source contract.

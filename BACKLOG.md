@@ -35,6 +35,9 @@
 
 ## Done
 
+- [x] **Clickable stock-detail data** — each successful ticker carries a
+  chart-ready five-year history, period returns, 52-week range, and transparent
+  technical-rating components for the Clockwork detail view.
 - [x] **Clockwork daily refresh** — the tracked wrapper and Clockwork-owned
   weekday user-systemd timer are installed; the dashboard exposes stale/run
   status and a safe manual refresh action.
