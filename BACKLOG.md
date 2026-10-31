@@ -14,7 +14,10 @@
 ## Data Sources
 
 - [ ] **Alpha Vantage adapter** — `src/tradility/sources/alpha_vantage.py`; free tier with API key; better fundamentals and EPS data than yfinance; rate-limited (5 calls/min free tier)
-- [ ] **Schwab API adapter** — price-history adapter and token-command boundary added in v0.2; remaining: provide the finance pipeline's non-interactive access-token helper, validate it live, and add batched real-time quotes
+- [ ] **Schwab API adapter** — five-year price history, the finance pipeline's
+  noninteractive rotating-token helper, live validation, and explicit Yahoo
+  fallback landed in v0.2; remaining: add batched real-time quotes and surface
+  token-health detail without exposing credentials
 - [ ] **Binance API adapter** — `src/tradility/sources/binance.py`; native OHLCV for crypto tickers; eliminates Yahoo Finance proxy for `*-USD` pairs; reuse the finance pipeline's `api.binance.us` integration
 
 ## Indicators
@@ -29,6 +32,12 @@
 
 - [x] **Clockwork to-tradility webpage** — `/to-tradility` loads `tradility-analysis.json` and renders RSI/VWAP signals
 - [x] **Clockwork API endpoint** — `GET /api/tradility-analysis` serves the JSON to the webpage
-- [ ] **Clockwork daily refresh** — tracked wrapper added in v0.2; add/install a Clockwork-owned weekday systemd timer and expose stale/run status in the dashboard
 
 ## Done
+
+- [x] **Clockwork daily refresh** — the tracked wrapper and Clockwork-owned
+  weekday user-systemd timer are installed; the dashboard exposes stale/run
+  status and a safe manual refresh action.
+- [x] **Multi-year trend baseline** — the default horizon is five years and
+  each successful ticker includes 50/200-day simple moving averages plus a
+  combined long-term trend signal alongside RSI and VWAP.
