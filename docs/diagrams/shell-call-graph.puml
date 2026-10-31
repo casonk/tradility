@@ -1,0 +1,16 @@
+@startuml
+title tradility-schwab-refresh Shell Script Flow
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Monospace
+skinparam componentStyle rectangle
+skinparam linetype ortho
+rectangle "scripts/run_scheduled_analysis.sh\n0 local shell edges\n1 external tool" as shell_scripts_run_scheduled_analysis_sh #DBEAFE
+cloud "mkdir" as tool_mkdir #FEF3C7
+shell_scripts_run_scheduled_analysis_sh --> tool_mkdir
+note as shellGraphSummary
+Scanned 1 shell script.
+Detected 0 local shell edges.
+Detected 1 external tool.
+end note
+@enduml

@@ -1,13 +1,15 @@
-@startuml packages_checkout
+@startuml packages_tradility-schwab-refresh
 set namespaceSeparator none
 top to bottom direction
 skinparam componentStyle rectangle
-rectangle "tradility\n0 child pkg, 5 modules\n6 python files\nexamples: __main__, analyze, cli" as tradility
+rectangle "tradility\n1 child pkg, 5 modules\n8 python files\nexamples: __main__, analyze, cli" as tradility
 rectangle "tradility.__main__\n1 python file" as tradility.__main__
 rectangle "tradility.analyze\n1 python file" as tradility.analyze
 rectangle "tradility.cli\n1 python file" as tradility.cli
 rectangle "tradility.fetch\n1 python file" as tradility.fetch
 rectangle "tradility.indicators\n1 python file" as tradility.indicators
+rectangle "tradility.sources\n0 child pkg, 1 module\n2 python files\nexamples: schwab" as tradility.sources
+rectangle "tradility.sources.schwab\n1 python file" as tradility.sources.schwab
 tradility --> tradility.analyze
 tradility --> tradility.fetch
 tradility --> tradility.indicators
@@ -15,4 +17,5 @@ tradility.__main__ --> tradility.cli
 tradility.analyze --> tradility.fetch
 tradility.analyze --> tradility.indicators
 tradility.cli --> tradility.analyze
+tradility.fetch --> tradility.sources.schwab
 @enduml

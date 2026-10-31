@@ -22,3 +22,7 @@ Unlike `CHATHISTORY.md`, this file should keep only reusable lessons that should
 - Re-run repo-appropriate validation after changing generated artifacts, diagrams, workflows, or other CI-facing files so formatting and compatibility issues are caught before push.
 - True intraday VWAP resets each session; on daily bar data use a rolling-window proxy and document the distinction clearly in both code and output JSON so consumers are not misled.
 - Crypto tickers from Binance use bare symbols (BTC, ETH). yfinance requires the -USD suffix (BTC-USD). Map at fetch time and restore original symbol in output to keep JSON consistent with holdings-aggregate.json.
+- Broker platform features and broker API capabilities are separate contracts.
+  Keep OAuth/refresh-token ownership in the governed credential pipeline, pass
+  only a short-lived access token across the adapter boundary, and verify each
+  research field has supported API access before promising it in Tradility.

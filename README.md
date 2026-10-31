@@ -2,7 +2,10 @@
 
 Technical analytics on investment ticker holdings and watchlists.
 
-Fetches OHLCV price data via **yfinance** and computes indicator signals (RSI, VWAP) for every ticker in your portfolio or a custom list. Outputs a structured JSON file suitable for dashboards and further analysis.
+Fetches multi-year OHLCV price data from the **Schwab Trader API**, with an
+explicit **yfinance** fallback, and computes short- and long-horizon indicator
+signals for every ticker in your portfolio or a custom list. Outputs a
+structured JSON file suitable for dashboards and further analysis.
 
 ## Prerequisites
 
@@ -22,8 +25,35 @@ tradility --holdings /path/to/exports/invest/holdings-aggregate.json \
 # Or from an explicit ticker list
 tradility --tickers AAPL MSFT BTC-USD ETH-USD \
           --output exports/tradility-analysis.json \
-          --period 60
+          --period 10y
 ```
+
+The default history window is five years. Legacy day counts remain accepted
+(`--period 365` is normalized to `365d`); `5y`, `10y`, and `max` are clearer for
+long-term analysis.
+
+## Market-data sources
+
+`--source auto` is the default. It prefers Schwab for non-crypto tickers when a
+token is available and falls back ticker-by-ticker to Yahoo. Crypto continues
+through Yahoo until the native Binance adapter is implemented.
+
+Provide a short-lived Schwab access token with either:
+
+```bash
+export TRADILITY_SCHWAB_ACCESS_TOKEN='...'
+
+# Preferred for scheduled use: delegate token ownership and rotation to an
+# existing credential pipeline. The command may print the token directly or
+# JSON containing an access_token field.
+export TRADILITY_SCHWAB_TOKEN_COMMAND='/path/to/token-helper --json'
+```
+
+Tradility never writes the token into its output or logs. OAuth refresh and
+interactive reauthorization remain the credential pipeline's responsibility;
+this avoids duplicating secrets or refresh-token state in a public analytics
+package. Use `--source schwab` to fail closed when Schwab is unavailable, or
+`--source yfinance` for an explicit Yahoo-only run.
 
 ## Output Format
 
@@ -32,10 +62,13 @@ tradility --tickers AAPL MSFT BTC-USD ETH-USD \
 ```json
 {
   "generated_at": "2026-06-15T21:00:00Z",
-  "period_days": 90,
+  "history_period": "5y",
+  "period_days": null,
   "rsi_period": 14,
   "vwap_period": 20,
-  "data_source": "yfinance",
+  "requested_source": "auto",
+  "data_source": "mixed",
+  "data_sources": {"schwab": 300, "yfinance": 49},
   "ticker_count": 349,
   "fetch_ok": 342,
   "fetch_errors": 7,
@@ -50,8 +83,11 @@ tradility --tickers AAPL MSFT BTC-USD ETH-USD \
       "rsi_14_signal": "neutral",
       "vwap_20": 298.45,
       "vwap_20_signal": "above",
+      "sma_50": 304.12,
+      "sma_200": 275.89,
+      "long_term_trend": "bullish",
       "fetch_status": "ok",
-      "data_source": "yfinance"
+      "data_source": "schwab"
     }
   ]
 }
@@ -74,6 +110,27 @@ tradility --tickers AAPL MSFT BTC-USD ETH-USD \
 | Price below VWAP | `below` |
 
 VWAP here is a rolling 20-day proxy (true intraday VWAP resets each session; daily bars require a windowed approximation).
+
+### Long-term trend
+
+Tradility calculates 50- and 200-trading-day simple moving averages. The
+combined signal is `bullish` when the 50-day average is above the 200-day
+average and price is above the 200-day average, `bearish` for the inverse,
+`mixed` otherwise, and `unknown` when history is insufficient.
+
+## Scheduled refresh
+
+`scripts/run_scheduled_analysis.sh` is the non-interactive workload entry point.
+It requires `TRADILITY_HOLDINGS_FILE` and accepts:
+
+- `TRADILITY_OUTPUT_FILE` (default: `exports/tradility-analysis.json`)
+- `TRADILITY_HISTORY_PERIOD` (default: `5y`)
+- `TRADILITY_MARKET_SOURCE` (default: `auto`)
+- `TRADILITY_PYTHON` (default: `.venv/bin/python`)
+- `TRADILITY_SCHWAB_TOKEN_COMMAND` (optional credential-pipeline helper)
+
+Clockwork owns the corresponding user-level systemd schedule. The wrapper uses
+an output lock so a manual refresh cannot overlap the scheduled run.
 
 ## Crypto Tickers
 

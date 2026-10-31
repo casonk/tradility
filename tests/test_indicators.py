@@ -6,7 +6,7 @@ import math
 
 import pandas as pd
 
-from tradility.indicators import rsi, rsi_signal, vwap, vwap_signal
+from tradility.indicators import long_term_trend_signal, rsi, rsi_signal, sma, vwap, vwap_signal
 
 
 def _close(prices: list[float]) -> pd.Series:
@@ -110,3 +110,16 @@ class TestVwapSignal:
     def test_none_inputs(self):
         assert vwap_signal(None, 100.0) == "unknown"
         assert vwap_signal(100.0, None) == "unknown"
+
+
+class TestLongTermTrend:
+    def test_sma_requires_full_period(self):
+        result = sma(_close([1.0, 2.0, 3.0]), period=3)
+        assert result.iloc[:2].isna().all()
+        assert result.iloc[-1] == 2.0
+
+    def test_signal_classifies_bull_bear_and_mixed(self):
+        assert long_term_trend_signal(120.0, 110.0, 100.0) == "bullish"
+        assert long_term_trend_signal(80.0, 90.0, 100.0) == "bearish"
+        assert long_term_trend_signal(105.0, 95.0, 100.0) == "mixed"
+        assert long_term_trend_signal(105.0, None, 100.0) == "unknown"

@@ -1,14 +1,22 @@
-@startuml classes_checkout
+@startuml classes_tradility-schwab-refresh
 set namespaceSeparator none
+class "AccessTokenResolution" as tradility.sources.schwab.AccessTokenResolution {
+  error : str
+  source : str
+  token : str
+}
 class "OHLCVResult" as tradility.fetch.OHLCVResult {
+  df
+  error : str
+  fallback_reason : str
+  ok : bool
+  source : str
+  ticker : str
+}
+class "SchwabOHLCVResult" as tradility.sources.schwab.SchwabOHLCVResult {
   df
   error : str
   ok : bool
   ticker : str
 }
-note as archilityPythonSurfaceNote
-Minimal class surface detected.
-Scanned 6 Python modules.
-See python-import-deps-src-tradility.svg for module-level imports.
-end note
 @enduml

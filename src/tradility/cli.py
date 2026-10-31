@@ -34,10 +34,21 @@ def main() -> int:
     )
     parser.add_argument(
         "--period",
-        type=int,
-        default=90,
-        metavar="DAYS",
-        help="Lookback window in calendar days (default: 90).",
+        default="5y",
+        metavar="LOOKBACK",
+        help="History lookback: DAYS, Nd, Ny, or max (default: 5y).",
+    )
+    parser.add_argument(
+        "--source",
+        choices=("auto", "schwab", "yfinance"),
+        default="auto",
+        help="Market-data source. auto prefers Schwab and falls back to yfinance.",
+    )
+    parser.add_argument(
+        "--schwab-token-command",
+        default="",
+        metavar="COMMAND",
+        help="Command that prints a Schwab access token or JSON containing access_token.",
     )
     args = parser.parse_args()
 
@@ -49,7 +60,9 @@ def main() -> int:
     payload = analyze_tickers(
         tickers=args.tickers,
         holdings_path=holdings_path,
-        period_days=args.period,
+        history_period=args.period,
+        source=args.source,
+        schwab_token_command=args.schwab_token_command,
     )
 
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

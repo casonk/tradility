@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- Schwab Trader API daily price-history adapter with an external token-command
+  boundary and explicit per-ticker Yahoo fallback.
+- Five-year default history, 50/200-day simple moving averages, and a combined
+  long-term trend signal.
+- Locked scheduled-analysis wrapper for Clockwork-owned systemd execution.
+
+### Changed
+
+- `--period` now accepts long horizons such as `5y`, `10y`, and `max`; legacy
+  integer day counts remain supported.
+
 ## [0.1.0] — 2026-06-15
 
 ### Added
