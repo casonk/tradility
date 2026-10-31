@@ -2,9 +2,10 @@
 
 ## Purpose
 
-`tradility` computes technical indicators (RSI, VWAP, 50/200-day trend) on investment ticker
-holdings and watchlists, outputting a structured JSON for downstream consumers
-(clockwork web dashboard, manual review).
+`tradility` computes technical indicators (RSI, VWAP, 50/200-day trend),
+historical performance, and transparent technical-rating components on
+investment ticker holdings and watchlists. It outputs structured JSON for
+downstream consumers (Clockwork summary and stock-detail views, manual review).
 
 ## Execution Flow
 
@@ -25,7 +26,7 @@ explicit --tickers list  ──┘          │                   └─▶ yfin
 | Module | Responsibility |
 |---|---|
 | `cli.py` | Argument parsing; orchestrates analyze_tickers call |
-| `analyze.py` | Pipeline: load tickers → fetch → compute → serialize JSON |
+| `analyze.py` | Pipeline: load tickers → fetch → compute indicators, returns, rating, and chart series → serialize JSON |
 | `fetch.py` | Source selection, yfinance download/fallback, OHLCVResult dataclass |
 | `sources/schwab.py` | Schwab access-token command boundary and price-history requests |
 | `indicators.py` | Pure math: RSI, VWAP, SMA, signal classifiers — no I/O, fully testable |
