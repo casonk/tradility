@@ -1,12 +1,13 @@
 """Deposit/withdrawal history (read-only) and Binance.US withdrawals (allowlist, caps, typed phrase)."""
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pytest
 
 from tradility import trading as t
 from tradility import transfers as tr
+from tradility._compat import UTC
 
 NOW = datetime(2026, 11, 1, tzinfo=UTC)
 

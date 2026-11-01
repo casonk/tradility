@@ -24,13 +24,14 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from tradility._compat import UTC
 from tradility.sources.schwab import resolve_access_token
 
 SCHWAB_BASE = "https://api.schwabapi.com"

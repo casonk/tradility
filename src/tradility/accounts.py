@@ -10,9 +10,10 @@ four digits.
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
+from tradility._compat import UTC
 from tradility.orders import (
     BINANCE_BASE,
     SCHWAB_BASE,

@@ -23,6 +23,7 @@ classifiers = [
 dependencies = [
     "yfinance>=0.2",
     "pandas>=2.0",
+    "tomli>=2; python_version < '3.11'",
 ]
 
 [project.urls]

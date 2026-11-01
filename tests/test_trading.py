@@ -2,11 +2,12 @@
 
 import json
 import os
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pytest
 
 from tradility import trading as t
+from tradility._compat import UTC
 
 POLICY = t.Policy(
     enabled=True,
