@@ -97,6 +97,9 @@ class Policy:
     schwab_accounts: tuple[str, ...] = ()  # last digits of each Schwab account that may be traded
     # Fidelity has no order API: these accounts only get a prepared ticket you submit yourself
     fidelity_accounts: tuple[str, ...] = ()
+    # "off": a ticket you submit yourself; "stage": fill Fidelity's ticket and check its preview, never
+    # submit; "submit": the final button may also be pressed (after a verified stage and your confirmation)
+    fidelity_automation: str = "off"
     buy_offset_pct: float = -2.5  # the order form's default limit price relative to the mark
     sell_offset_pct: float = 2.5
     default_session: str = "normal"  # what the order form starts with: "normal" or "extended"
@@ -192,6 +195,7 @@ def load_policy(path: Path | None = None) -> Policy:
                 for a in (raw.get("fidelity") or {}).get("accounts", [])
                 if str(a).strip()
             ),
+            fidelity_automation=str((raw.get("fidelity") or {}).get("automation", "off")).lower(),
             buy_offset_pct=float((raw.get("defaults") or {}).get("buy_offset_pct", -2.5)),
             sell_offset_pct=float((raw.get("defaults") or {}).get("sell_offset_pct", 2.5)),
             default_session=str((raw.get("defaults") or {}).get("session", "normal")).lower(),
@@ -213,6 +217,8 @@ def load_policy(path: Path | None = None) -> Policy:
         )
     except (TypeError, ValueError, KeyError, AttributeError) as exc:
         raise TradingError("trading policy has a bad value") from exc
+    if policy.fidelity_automation not in ("off", "stage", "submit"):
+        raise TradingError("trading policy [fidelity] automation is off, stage or submit")
     if policy.confirmation not in ("phrase", "button"):
         raise TradingError("trading policy defaults: confirmation is phrase or button")
     if policy.default_session not in SESSIONS or policy.default_tif not in TIFS:
@@ -380,6 +386,13 @@ def run_credential_command(command: str) -> dict[str, Any]:
 
 
 # -- brokers ------------------------------------------------------------------------------------
+
+
+@dataclass
+class FidelityPending:
+    """An order staged on Fidelity's page, waiting to be submitted (or to expire)."""
+
+    order: Order
 
 
 @dataclass
@@ -987,7 +1000,9 @@ class Trader:
             )
         order, _, _ = entry
         if not isinstance(order, Order):
-            raise TradingError("that preview is for a withdrawal, not an order")
+            raise TradingError(
+                "that preview is for a withdrawal or a Fidelity order, not this kind of order"
+            )
         if self.policy.confirmation == "phrase" and str(phrase).strip() != order.phrase:
             self.audit.write("rejected", reason="phrase", order=_describe(order))
             raise TradingError(f'type exactly "{order.phrase}" to confirm')
@@ -1114,6 +1129,134 @@ class Trader:
             if a.get("broker") == "fidelity" and account in (a.get("id"), a.get("key"))
         ]
         return max(matches, key=lambda a: a.get("total_value", 0.0), default=None)
+
+    fidelity_driver: Any = (
+        None  # a client with stage(order) and submit(); the trader service sets it
+    )
+
+    def _fidelity_driver(self, need: str) -> Any:
+        mode = self.policy.fidelity_automation
+        if mode == "off" or (need == "submit" and mode != "submit"):
+            raise TradingError(
+                "driving Fidelity's website is turned off in the policy"
+                if mode == "off"
+                else 'submitting to Fidelity is off ([fidelity] automation = "stage"): submit it on Fidelity yourself'
+            )
+        if self.fidelity_driver is None:
+            raise TradingError("the Fidelity browser is not available")
+        return self.fidelity_driver
+
+    def fidelity_stage(self, raw: Any) -> dict[str, Any]:
+        """Do everything ``fidelity_ticket`` does, then fill Fidelity's own ticket, press its Preview and
+        check that what it shows is this order. Nothing is submitted; the page stays staged for
+        ``fidelity_submit`` for a couple of minutes."""
+        ticket = self.fidelity_ticket(raw)
+        driver = self._fidelity_driver("stage")
+        reply = driver.stage(ticket["order"])
+        if not reply.get("ok"):
+            self.audit.write("fidelity_stage_failed", order=ticket["order"], kind=reply.get("kind"))
+            raise TradingError(str(reply.get("error", "Fidelity did not stage the order")))
+        token = secrets.token_urlsafe(18)
+        order = parse_order(
+            {
+                **{
+                    k: ticket["order"][k]
+                    for k in (
+                        "ticker",
+                        "side",
+                        "kind",
+                        "quantity",
+                        "price",
+                        "account",
+                        "session",
+                        "tif",
+                    )
+                }
+            }
+        )
+        with self._lock:
+            now = self.now()
+            self._previews = {k: v for k, v in self._previews.items() if v[1] > now}
+            self._previews[token] = (
+                FidelityPending(dataclasses.replace(order, venue="fidelity")),
+                now + PREVIEW_TTL_SECONDS,
+                ticket["notional"],
+            )
+        self.audit.write(
+            "fidelity_staged",
+            order=ticket["order"],
+            notional=ticket["notional"],
+            checks=len(reply["staged"]["checks"]),
+        )
+        return {
+            **ticket,
+            "preview_id": token,
+            "expires_in": PREVIEW_TTL_SECONDS,
+            "phrase": f"{order.side.upper()} {order.ticker} AT FIDELITY",
+            "confirmation": self.policy.confirmation,
+            "automation": self.policy.fidelity_automation,
+            "staged": reply["staged"],
+        }
+
+    def fidelity_submit(self, token: str, phrase: str) -> dict[str, Any]:
+        """Press Fidelity's final button on the staged page, once, if the policy allows it."""
+        with self._lock:
+            entry = self._previews.pop(str(token), None)
+        if entry is None or entry[1] <= self.now() or not isinstance(entry[0], FidelityPending):
+            raise TradingError("that staged order has expired or was already used; stage it again")
+        order = entry[0].order
+        driver = self._fidelity_driver("submit")  # refuse first if submitting is not allowed at all
+        expected = f"{order.side.upper()} {order.ticker} AT FIDELITY"
+        if self.policy.confirmation == "phrase" and str(phrase).strip() != expected:
+            self.audit.write("rejected", reason="phrase", order=_describe(order))
+            raise TradingError(f'type exactly "{expected}" to confirm')
+        if not self.policy.enabled or order.account not in self.policy.fidelity_accounts:
+            raise TradingError("that Fidelity account is not allowed in the policy")
+        self.policy.check_ticker(order.ticker)
+        notional = entry[2]
+        if self.policy.per_order_usd <= 0 or notional > self.policy.per_order_usd:
+            raise TradingError("this order is over the per-order limit now; stage it again")
+        spent = self.audit.spent_today()
+        if self.policy.daily_usd <= 0 or spent + notional > self.policy.daily_usd:
+            raise TradingError("this order would pass the daily limit; stage it again")
+        self.audit.write("sending", order=_describe(order), notional=notional, broker="fidelity")
+        try:
+            reply = driver.submit()
+        except (OSError, ValueError) as exc:
+            self.audit.write(
+                "unknown",
+                order=_describe(order),
+                notional=notional,
+                broker="fidelity",
+                error=type(exc).__name__,
+            )
+            raise TradingError(
+                "the order's outcome is unknown; check Fidelity before trying again"
+            ) from exc
+        if not reply.get("ok"):
+            outcome_unknown = "unknown" in str(reply.get("error", ""))
+            self.audit.write(
+                "unknown" if outcome_unknown else "failed",
+                order=_describe(order),
+                notional=notional,
+                broker="fidelity",
+                error=str(reply.get("error", ""))[:200],
+            )
+            raise TradingError(str(reply.get("error", "Fidelity did not accept the order")))
+        result = reply.get("result") or {}
+        self.audit.write(
+            "placed",
+            order=_describe(order),
+            notional=notional,
+            broker="fidelity",
+            broker_order_id=result.get("order_id", ""),
+        )
+        return {
+            "placed": True,
+            "broker": "fidelity",
+            "broker_order_id": result.get("order_id", ""),
+            "order": _describe(order),
+        }
 
     def fidelity_accounts(self) -> list[dict[str, Any]]:
         """The policy's Fidelity accounts that the statements know, for the order form."""
@@ -1308,7 +1451,7 @@ def _describe(order: Order) -> dict[str, Any]:
     }
     if order.account:
         described["account"] = order.account
-    if order.broker == "schwab":
+    if order.broker in ("schwab", "fidelity"):
         described["session"], described["tif"] = order.session, order.tif
     return described
 

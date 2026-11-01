@@ -58,3 +58,8 @@ tif = "day"
 # Name an account by its last four digits (add the type, e.g. "7866:hsa", when two accounts share the digits).
 [fidelity]
 accounts = ["4917"]
+# "off": a ticket you submit yourself. "stage": the order is also filled in on Fidelity's website (in a browser
+# profile you signed in to once: python -m tradility.fidelity_browser login) and Fidelity's own preview is checked
+# against it, but never submitted. "submit": the final button can also be pressed, after a verified stage and your
+# confirmation. This is unofficial, may breach Fidelity's terms and depends on the page's layout; start with "stage".
+automation = "off"
