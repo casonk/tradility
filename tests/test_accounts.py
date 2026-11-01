@@ -153,3 +153,82 @@ def test_holdings_are_collected_for_sizing_orders_and_stripped_from_the_page_fee
     assert svc.trader.accounts_loader()["accounts"][0]["holdings"] == {
         "A": {}
     }  # kept for the impact
+
+
+def test_statement_institutions_are_read_from_the_holdings_export_and_live_ones_are_left_out(
+    tmp_path,
+):
+    path = tmp_path / "holdings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "holdings": [
+                    {
+                        "ticker": "AAPL",
+                        "accounts": [
+                            {
+                                "institution": "cs",
+                                "ending_value": 1000.0,
+                                "quantity": 5,
+                                "period_end": "2026-10-31",
+                            },
+                            {
+                                "institution": "fid",
+                                "ending_value": 400.0,
+                                "quantity": 2,
+                                "period_end": "2026-02-28",
+                            },
+                            {
+                                "institution": "fid",
+                                "ending_value": 100.0,
+                                "quantity": 1,
+                                "period_end": "2026-01-31",
+                            },
+                        ],
+                    },
+                    {
+                        "ticker": "BTC",
+                        "accounts": [
+                            {
+                                "institution": "bin",
+                                "ending_value": 9000.0,
+                                "quantity": 1,
+                                "period_end": "2026-10-31",
+                            }
+                        ],
+                    },
+                    {
+                        "ticker": "VTI",
+                        "accounts": [
+                            {
+                                "institution": "fid",
+                                "ending_value": 600.0,
+                                "quantity": 3,
+                                "period_end": "2026-02-28",
+                            }
+                        ],
+                    },
+                ]
+            }
+        )
+    )
+    got = a.statement_accounts(path)
+    assert set(got["institutions"]) == {"fid"}
+    assert got["institutions"]["fid"] == {
+        "name": "Fidelity",
+        "total": 1100.0,
+        "as_of": "2026-02-28",
+    }
+    assert got["holdings"]["AAPL"] == {"quantity": 3.0, "market_value": 500.0}
+    assert "BTC" not in got["holdings"]
+    assert a.statement_accounts(tmp_path / "missing.json") == {} and a.statement_accounts("") == {}
+    svc = ts.Service(lambda: ts.t.Policy())
+    svc.account_loader = lambda: {"accounts": [], "sources": {}}
+    import os
+
+    os.environ["TRADILITY_HOLDINGS_FILE"] = str(path)
+    try:
+        good = {"Host": "127.0.0.1:8768", "X-Tradility-Trader": "1"}
+        assert svc.handle("GET", "/accounts", good, b"")[1]["statements"][0]["name"] == "Fidelity"
+    finally:
+        del os.environ["TRADILITY_HOLDINGS_FILE"]

@@ -674,6 +674,9 @@ class Trader:
         return self.brokers[order.broker]()
 
     accounts_loader: Callable[[], dict[str, Any]] | None = None
+    statements_loader: Callable[[], dict[str, Any]] | None = (
+        None  # holdings kept at other institutions
+    )
 
     def impact(self, order: Order, last: float) -> dict[str, Any] | None:
         """What the order does to the position: dollars and percentages, in its account and overall.
@@ -743,6 +746,9 @@ class Trader:
                     else float(mine["buying_power"]) - sign * cost
                 ),
             },
+            "everything": self._with_statements(
+                symbol, value_all, qty_all, total_all, cost, sign, order
+            ),
             "overall": {
                 "quantity": {"before": qty_all, "after": qty_all + sign * order.quantity},
                 "value": {"before": value_all, "after": after_all},
@@ -752,6 +758,44 @@ class Trader:
                 },
                 "total": total_all,
             },
+        }
+
+    def _with_statements(
+        self,
+        symbol: str,
+        value_all: float,
+        qty_all: float,
+        total_all: float,
+        cost: float,
+        sign: int,
+        order: Order,
+    ) -> dict[str, Any] | None:
+        """The same position counting institutions that are not read live (e.g. Fidelity, from statements)."""
+        if self.statements_loader is None:
+            return None
+        try:
+            other = self.statements_loader()
+        except Exception:  # noqa: BLE001 - an extra; never blocks a preview
+            return None
+        if not other:
+            return None
+        held = other.get("holdings", {}).get(symbol, {})
+        value = value_all + float(held.get("market_value", 0.0))
+        qty = qty_all + float(held.get("quantity", 0.0))
+        total = total_all + sum(float(i.get("total", 0.0)) for i in other["institutions"].values())
+        after = value + sign * cost
+        return {
+            "institutions": [
+                {"name": i["name"], "as_of": i["as_of"], "total": i["total"]}
+                for i in other["institutions"].values()
+            ],
+            "quantity": {"before": qty, "after": qty + sign * order.quantity},
+            "value": {"before": value, "after": after},
+            "percent": {
+                "before": value / total * 100 if total > 0 else None,
+                "after": after / total * 100 if total > 0 else None,
+            },
+            "total": total,
         }
 
     def quote(self, ticker: str) -> dict[str, Any]:
