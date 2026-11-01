@@ -508,3 +508,112 @@ def test_an_empty_templates_list_means_no_templates_not_the_defaults(rig):
     trader, *_ = rig
     trader.policy = t.Policy(**{**POLICY.__dict__, "templates": ()})
     assert trader.quote("AAPL")["templates"] == []
+
+
+ACCOUNTS = {
+    "accounts": [
+        {
+            "broker": "schwab",
+            "id": "1234",
+            "label": "Schwab …1234",
+            "total_value": 10000.0,
+            "cash_available_to_trade": 2000.0,
+            "buying_power": 4000.0,
+            "holdings": {"AAPL": {"quantity": 5.0, "market_value": 500.0}},
+        },
+        {
+            "broker": "schwab",
+            "id": "77",
+            "label": "Schwab …77",
+            "total_value": 30000.0,
+            "cash_available_to_trade": 500.0,
+            "buying_power": 500.0,
+            "holdings": {"AAPL": {"quantity": 10.0, "market_value": 1000.0}},
+        },
+        {
+            "broker": "binance",
+            "id": "binance",
+            "label": "Binance.US spot",
+            "total_value": 60000.0,
+            "cash_available_to_trade": 100.0,
+            "buying_power": 100.0,
+            "holdings": {"BTC-USD": {"quantity": 1.0, "market_value": 50000.0}},
+        },
+    ]
+}
+
+
+def test_a_preview_shows_how_the_order_changes_the_position_in_the_account_and_overall(rig):
+    trader, *_ = rig
+    trader.accounts_loader = lambda: ACCOUNTS
+    pv = trader.preview(order(quantity=2, price=100))  # buy $200 of AAPL in account 1234
+    imp = pv["impact"]
+    assert imp["cost"] == 200 and imp["account"]["label"] == "Schwab …1234"
+    assert imp["account"]["quantity"] == {"before": 5.0, "after": 7.0}
+    assert imp["account"]["value"] == {"before": 500.0, "after": 700.0}
+    assert imp["account"]["percent"]["before"] == pytest.approx(5.0)
+    assert imp["account"]["percent"]["after"] == pytest.approx(7.0)
+    assert imp["account"]["cash_after"] == 1800.0 and imp["account"]["buying_power_after"] == 3800.0
+    assert imp["overall"]["value"] == {
+        "before": 1500.0,
+        "after": 1700.0,
+    }  # both Schwab accounts' AAPL
+    total = 10000 + 30000 + 60000
+    assert round(imp["overall"]["percent"]["before"], 4) == round(1500 / total * 100, 4)
+    assert round(imp["overall"]["percent"]["after"], 4) == round(1700 / total * 100, 4)
+
+
+def test_a_sell_reduces_the_position_and_adds_to_cash_and_binance_uses_its_own_account(rig):
+    trader, *_ = rig
+    trader.accounts_loader = lambda: ACCOUNTS
+    sell = trader.preview(order(side="sell", quantity=3, price=100))["impact"]
+    assert sell["account"]["value"] == {"before": 500.0, "after": 200.0}
+    assert sell["account"]["cash_after"] == 2300.0
+    btc = trader.preview(order(ticker="BTC-USD", account="", quantity=0.01, price=50000))["impact"]
+    assert (
+        btc["account"]["label"] == "Binance.US spot" and btc["account"]["value"]["after"] == 50500.0
+    )
+
+
+def test_the_preview_still_works_when_account_details_are_unavailable(rig):
+    trader, *_ = rig
+    assert trader.preview(order())["impact"] is None  # no loader
+
+    def boom():
+        raise OSError("broker down")
+
+    trader.accounts_loader = boom
+    assert trader.preview(order())["impact"] is None
+
+
+def test_button_confirmation_needs_no_phrase_but_the_preview_is_still_single_use_and_expiring(rig):
+    trader, send, _, clock = rig
+    trader.policy = t.Policy(**{**POLICY.__dict__, "confirmation": "button"})
+    pv = trader.preview(order())
+    assert pv["confirmation"] == "button"
+    assert trader.confirm(pv["preview_id"], "")["placed"] is True
+    with pytest.raises(t.TradingError, match="expired or was already used"):
+        trader.confirm(pv["preview_id"], "")
+    pv = trader.preview(order())
+    clock["now"] += t.PREVIEW_TTL_SECONDS + 1
+    with pytest.raises(t.TradingError, match="expired"):
+        trader.confirm(pv["preview_id"], "")
+    assert len(placements(send)) == 1
+
+
+def test_phrase_confirmation_is_the_default_and_a_cancel_always_needs_its_phrase(rig):
+    trader, *_ = rig
+    assert POLICY.confirmation == "phrase"
+    trader.policy = t.Policy(**{**POLICY.__dict__, "confirmation": "button"})
+    with pytest.raises(t.TradingError, match="CANCEL 777"):
+        trader.cancel("schwab", "777", "", account="1234")
+
+
+def test_the_policy_reads_the_confirmation_mode(tmp_path):
+    path = tmp_path / "p.toml"
+    path.write_text('enabled = true\n[defaults]\nconfirmation = "button"\n')
+    os.chmod(path, 0o600)
+    assert t.load_policy(path).confirmation == "button"
+    path.write_text('[defaults]\nconfirmation = "none"\n')
+    with pytest.raises(t.TradingError, match="confirmation is phrase or button"):
+        t.load_policy(path)

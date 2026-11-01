@@ -36,6 +36,7 @@ class Service:
         self.trader = t.Trader(t.Policy(), {}, self.audit)
         self.account_loader = accounts_module.collect
         self._accounts: tuple[float, dict[str, Any]] | None = None
+        self.trader.accounts_loader = self._cached_accounts
         self.transfer_loader = transfers_module.collect
         self._transfers: tuple[float, dict[str, Any]] | None = None
 
@@ -45,14 +46,24 @@ class Service:
         self.trader.brokers = t.build_brokers(policy, send=self.send)
         return self.trader
 
-    def accounts(self) -> dict[str, Any]:
-        """Read-only account details, cached briefly."""
+    def _cached_accounts(self) -> dict[str, Any]:
+        """Account details including each account's holdings, cached briefly."""
         import time
 
         now = time.monotonic()
         if self._accounts is None or now - self._accounts[0] > self.ACCOUNTS_TTL:
             self._accounts = (now, self.account_loader())
         return self._accounts[1]
+
+    def accounts(self) -> dict[str, Any]:
+        """Read-only account details for the page (holdings are only used to size an order)."""
+        data = self._cached_accounts()
+        return {
+            **data,
+            "accounts": [
+                {k: v for k, v in a.items() if k != "holdings"} for a in data.get("accounts", [])
+            ],
+        }
 
     def transfers(self) -> dict[str, Any]:
         """Read-only deposit, withdrawal and transfer history, cached for a minute."""
@@ -73,6 +84,7 @@ class Service:
             "daily_usd": policy.daily_usd,
             "price_band_pct": policy.price_band_pct,
             "schwab_accounts": list(policy.schwab_accounts),
+            "confirmation": policy.confirmation,
             "withdrawals": {
                 "enabled": policy.withdrawals_enabled,
                 "per_withdrawal_usd": policy.withdraw_per_usd,

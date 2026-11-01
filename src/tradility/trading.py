@@ -99,6 +99,9 @@ class Policy:
     sell_offset_pct: float = 2.5
     default_session: str = "normal"  # what the order form starts with: "normal" or "extended"
     default_tif: str = "gtc"  # "gtc" or "day"
+    # How an order is confirmed after its preview: "phrase" (type BUY AAPL) or "button" (a click).
+    # Withdrawals and cancels always need their typed phrase.
+    confirmation: str = "phrase"
     # One-click order shapes: (name, side, offset_pct from the mark, tif or "", session or "")
     templates: tuple[tuple[str, str, float, str, str], ...] | None = None  # None: the built-in set
     # Withdrawals are off unless this section turns them on, and only go to listed addresses.
@@ -186,6 +189,7 @@ def load_policy(path: Path | None = None) -> Policy:
             sell_offset_pct=float((raw.get("defaults") or {}).get("sell_offset_pct", 2.5)),
             default_session=str((raw.get("defaults") or {}).get("session", "normal")).lower(),
             default_tif=str((raw.get("defaults") or {}).get("time_in_force", "gtc")).lower(),
+            confirmation=str((raw.get("defaults") or {}).get("confirmation", "phrase")).lower(),
             templates=_templates(raw.get("templates")),
             withdrawals_enabled=(raw.get("withdrawals") or {}).get("enabled") is True,
             withdraw_per_usd=float((raw.get("withdrawals") or {}).get("per_withdrawal_usd", 0)),
@@ -202,6 +206,8 @@ def load_policy(path: Path | None = None) -> Policy:
         )
     except (TypeError, ValueError, KeyError, AttributeError) as exc:
         raise TradingError("trading policy has a bad value") from exc
+    if policy.confirmation not in ("phrase", "button"):
+        raise TradingError("trading policy defaults: confirmation is phrase or button")
     if policy.default_session not in SESSIONS or policy.default_tif not in TIFS:
         raise TradingError(
             "trading policy defaults: session is normal or extended, time_in_force is gtc or day"
@@ -663,6 +669,87 @@ class Trader:
             raise TradingError("choose one of the Schwab accounts the policy allows")
         return self.brokers[order.broker]()
 
+    accounts_loader: Callable[[], dict[str, Any]] | None = None
+
+    def impact(self, order: Order, last: float) -> dict[str, Any] | None:
+        """What the order does to the position: dollars and percentages, in its account and overall.
+
+        A buy adds the order's cost to the position and a sell removes it; paying for a buy moves
+        cash into stock, so an account's total is unchanged and only its mix shifts. None when the
+        account details are unavailable (the preview still works without them)."""
+        if self.accounts_loader is None:
+            return None
+        try:
+            accounts = self.accounts_loader().get("accounts", [])
+        # the impact is an extra; a broker hiccup must not block a preview
+        except Exception:  # noqa: BLE001
+            return None
+        price = order.price if order.price is not None else last
+        cost = order.quantity * price
+        sign = 1 if order.side == "buy" else -1
+        mine = next(
+            (
+                a
+                for a in accounts
+                if a.get("broker") == order.broker
+                and (order.broker == "binance" or a.get("id") == order.account)
+            ),
+            None,
+        )
+        if mine is None:
+            return None
+        symbol = order.ticker
+        held_here = (mine.get("holdings") or {}).get(symbol, {})
+        value_here, qty_here = (
+            float(held_here.get("market_value", 0.0)),
+            float(held_here.get("quantity", 0.0)),
+        )
+        total_here = float(mine.get("total_value") or 0.0)
+        value_all = sum(
+            float((a.get("holdings") or {}).get(symbol, {}).get("market_value", 0.0))
+            for a in accounts
+        )
+        qty_all = sum(
+            float((a.get("holdings") or {}).get(symbol, {}).get("quantity", 0.0)) for a in accounts
+        )
+        total_all = sum(float(a.get("total_value") or 0.0) for a in accounts)
+
+        def pct(part: float, whole: float) -> float | None:
+            return part / whole * 100 if whole > 0 else None
+
+        after_here, after_all = value_here + sign * cost, value_all + sign * cost
+        funds = mine.get("cash_available_to_trade")
+        funds = mine.get("buying_power") if funds is None else funds
+        return {
+            "symbol": symbol,
+            "cost": cost,
+            "account": {
+                "label": mine.get("label"),
+                "quantity": {"before": qty_here, "after": qty_here + sign * order.quantity},
+                "value": {"before": value_here, "after": after_here},
+                "percent": {
+                    "before": pct(value_here, total_here),
+                    "after": pct(after_here, total_here),
+                },
+                "total": total_here,
+                "cash_after": None if funds is None else float(funds) - sign * cost,
+                "buying_power_after": (
+                    None
+                    if mine.get("buying_power") is None
+                    else float(mine["buying_power"]) - sign * cost
+                ),
+            },
+            "overall": {
+                "quantity": {"before": qty_all, "after": qty_all + sign * order.quantity},
+                "value": {"before": value_all, "after": after_all},
+                "percent": {
+                    "before": pct(value_all, total_all),
+                    "after": pct(after_all, total_all),
+                },
+                "total": total_all,
+            },
+        }
+
     def quote(self, ticker: str) -> dict[str, Any]:
         """The current mark and the default limit prices for a buy and a sell (read-only)."""
         ticker = str(ticker).strip().upper()
@@ -746,6 +833,8 @@ class Trader:
             self._previews[token] = (order, now + PREVIEW_TTL_SECONDS, notional)
         self.audit.write("preview", order=_describe(order), notional=notional, broker=order.broker)
         return {
+            "impact": self.impact(order, last),
+            "confirmation": self.policy.confirmation,
             "preview_id": token,
             "expires_in": PREVIEW_TTL_SECONDS,
             "phrase": order.phrase,
@@ -766,7 +855,7 @@ class Trader:
         order, _, _ = entry
         if not isinstance(order, Order):
             raise TradingError("that preview is for a withdrawal, not an order")
-        if str(phrase).strip() != order.phrase:
+        if self.policy.confirmation == "phrase" and str(phrase).strip() != order.phrase:
             self.audit.write("rejected", reason="phrase", order=_describe(order))
             raise TradingError(f'type exactly "{order.phrase}" to confirm')
         broker = self._broker(order)

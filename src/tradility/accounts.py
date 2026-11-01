@@ -66,7 +66,25 @@ def schwab_account(item: dict[str, Any]) -> dict[str, Any]:
         "closing_only": bool(acct.get("isClosingOnlyRestricted")),
         "in_call": call,
         "positions": len(acct.get("positions") or []),
+        # symbol -> {quantity, market_value}; used to show an order's effect, stripped from the page feed
+        "holdings": schwab_holdings(acct.get("positions") or []),
     }
+
+
+def schwab_holdings(positions: list[Any]) -> dict[str, dict[str, float]]:
+    out: dict[str, dict[str, float]] = {}
+    for position in positions:
+        if not isinstance(position, dict):
+            continue
+        symbol = str((position.get("instrument") or {}).get("symbol", "")).upper()
+        value = _num(position.get("marketValue"))
+        if not symbol or value is None:
+            continue
+        qty = (_num(position.get("longQuantity")) or 0) - (_num(position.get("shortQuantity")) or 0)
+        row = out.setdefault(symbol, {"quantity": 0.0, "market_value": 0.0})
+        row["quantity"] += qty
+        row["market_value"] += value
+    return out
 
 
 def fetch_schwab(token: str, get: GetJson) -> list[dict[str, Any]]:
@@ -84,6 +102,7 @@ def binance_account(account: dict[str, Any], prices: dict[str, float]) -> dict[s
     """Binance.US spot balances valued in dollars; unlisted or dust assets are left out of the total."""
     total = cash = 0.0
     held = 0
+    holdings: dict[str, dict[str, float]] = {}
     for row in account.get("balances") or []:
         qty = (_num(row.get("free")) or 0) + (_num(row.get("locked")) or 0)
         if qty <= 0:
@@ -97,6 +116,8 @@ def binance_account(account: dict[str, Any], prices: dict[str, float]) -> dict[s
             continue
         held += 1
         total += value
+        if asset not in STABLE:
+            holdings[f"{asset}-USD"] = {"quantity": qty, "market_value": value}
         if asset == "USD":
             cash += _num(row.get("free")) or 0
     return {
@@ -114,6 +135,7 @@ def binance_account(account: dict[str, Any], prices: dict[str, float]) -> dict[s
         # a read-only key must not be able to withdraw; the page warns if this key can
         "can_withdraw": bool(account.get("canWithdraw")),
         "positions": held,
+        "holdings": holdings,
     }
 
 
