@@ -11,6 +11,22 @@
   this done when an old hash returns 404 here. Never push an old clone's
   history back.
 
+## Trading
+
+- [ ] [manual:2026-11-01] **Enable Binance.US trading** — the code is done (signed orders, tick/lot/minimum
+  filters, `api_credentials.py --trade` in the finance repo) but there is no trade-enabled key yet. Create a key
+  with trading on and withdrawals off in its own KeePass entry, add `institutions.bin.trade_credentials` to the
+  finance config, set `TRADILITY_BINANCE_TRADE_CREDENTIAL_COMMAND`, set `binance = true` in
+  `~/.config/tradility/trading.toml`, then check a preview and place one small order. Also disable withdrawals
+  on the current read-only key, which the Accounts panel shows can withdraw.
+- [ ] [manual:2026-11-01] **Enable Binance.US withdrawals (optional, high risk)** — the code is done and off by
+  default. Needs a separate withdraw-enabled key restricted to this machine's IP behind
+  `TRADILITY_BINANCE_WITHDRAW_CREDENTIAL_COMMAND`, destinations and caps under `[withdrawals]` in the policy and
+  Binance.US's own address whitelist; test with a tiny amount.
+- [ ] [manual:2026-11-01] **Replace or amend an open Schwab order** — orders can be previewed, sent and cancelled
+  but not edited; add a replace (cancel plus new, or Schwab's replace endpoint) with the same preview and typed
+  confirmation.
+
 ## Data Sources
 
 - [ ] **Alpha Vantage adapter** — `src/tradility/sources/alpha_vantage.py`; free tier with API key; better fundamentals and EPS data than yfinance; rate-limited (5 calls/min free tier)
