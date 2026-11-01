@@ -782,6 +782,8 @@ class Trader:
                 "value": value,
                 "percent": value / total * 100 if total > 0 else None,
                 "total": total,
+                # what these shares cost on average, where the broker says (Schwab does)
+                "average_price": held.get("average_price"),
             }
             if chosen is not None and a is chosen:
                 after = value + value_change
