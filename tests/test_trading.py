@@ -43,6 +43,27 @@ class Fake:
         if "/marketdata/" in url:
             symbol = url.split("symbols=")[1].split("&")[0]
             return 200, {}, {symbol: {"quote": {"lastPrice": 100.0}}}
+        if "exchangeInfo" in url:
+            return (
+                200,
+                {},
+                {
+                    "symbols": [
+                        {
+                            "symbol": "BTCUSD",
+                            "filters": [
+                                {"filterType": "PRICE_FILTER", "tickSize": "0.01"},
+                                {
+                                    "filterType": "LOT_SIZE",
+                                    "minQty": "0.00001",
+                                    "stepSize": "0.00001",
+                                },
+                                {"filterType": "NOTIONAL", "minNotional": "10"},
+                            ],
+                        }
+                    ]
+                },
+            )
         if "ticker/price" in url:
             return 200, {}, {"price": "50000"}
         if url.endswith("previewOrder"):
@@ -318,3 +339,26 @@ def test_the_quote_uses_the_mark_then_the_last_trade(rig):
         "tok", lambda m, u, h, b: (200, {}, {"AAPL": {"quote": {"lastPrice": 50.0}}})
     )
     assert sb.last_price("AAPL") == 50.0
+
+
+def test_binance_quotes_defaults_on_the_tick_and_refuses_orders_the_exchange_would_reject(rig):
+    trader, send, *_ = rig
+    quote = trader.quote("BTC-USD")
+    assert (
+        quote["mark"] == 50000.0
+        and quote["buy_price"] == 48750.0
+        and quote["sell_price"] == 51250.0
+    )
+    for change, message in (
+        ({"quantity": 0.000001}, "multiple of 0.00001"),
+        ({"quantity": 0.012345678}, "multiple of 0.00001"),
+        ({"price": 50000.001}, "multiple of 0.01"),
+        ({"quantity": 0.0001, "price": 50000}, "below Binance.US's \\$10 minimum"),
+    ):
+        with pytest.raises(t.TradingError, match=message):
+            trader.preview(
+                order(ticker="BTC-USD", account="", **{"quantity": 0.01, "price": 50000, **change})
+            )
+    assert not placements(send)
+    ok = trader.preview(order(ticker="BTC-USD", account="", quantity=0.01, price=50000))
+    assert ok["broker"] == "binance"
