@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from tradility import accounts as a
 from tradility import trader_service as ts
 
@@ -139,7 +141,9 @@ def test_holdings_are_collected_for_sizing_orders_and_stripped_from_the_page_fee
             "marketValue": 200.0,
         },
     ]
-    assert a.schwab_account(item)["holdings"] == {"AAPL": {"quantity": 5.0, "market_value": 1000.0}}
+    assert a.schwab_account(item)["holdings"] == {
+        "AAPL": {"quantity": 5.0, "market_value": 1000.0, "average_price": None}
+    }
     got = a.binance_account(
         {
             "balances": [
@@ -242,3 +246,25 @@ def test_spendable_falls_back_to_the_current_buying_power_and_is_never_the_initi
     bare = json.loads(json.dumps(SCHWAB))
     del bare["securitiesAccount"]["projectedBalances"]["stockBuyingPower"]
     assert a.schwab_account(bare)["spendable"] == 40000.0
+
+
+def test_schwab_positions_carry_their_average_price_for_the_cost_of_a_position():
+    item = json.loads(json.dumps(SCHWAB))
+    item["securitiesAccount"]["positions"] = [
+        {
+            "instrument": {"symbol": "VWO"},
+            "longQuantity": 4,
+            "shortQuantity": 0,
+            "marketValue": 222.0,
+            "averagePrice": 58.67,
+        },
+        {
+            "instrument": {"symbol": "NOPRICE"},
+            "longQuantity": 1,
+            "shortQuantity": 0,
+            "marketValue": 9.0,
+        },
+    ]
+    held = a.schwab_account(item)["holdings"]
+    assert held["VWO"]["average_price"] == pytest.approx(58.67)
+    assert held["NOPRICE"]["average_price"] is None
