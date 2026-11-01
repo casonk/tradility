@@ -400,8 +400,10 @@ def test_the_policy_defaults_fill_in_what_the_request_leaves_out(tmp_path):
 
 def test_a_market_order_cannot_use_extended_hours_and_bad_values_are_refused(rig):
     trader, *_ = rig
-    with pytest.raises(t.TradingError, match="market order cannot be placed in extended hours"):
+    with pytest.raises(t.TradingError, match="market order can only trade in regular hours"):
         trader.preview(order(kind="market", price=None, session="extended"))
+    with pytest.raises(t.TradingError, match="cannot rest"):
+        trader.preview(order(kind="market", price=None, session="normal", tif="gtc"))
     with pytest.raises(t.TradingError, match="hours must be"):
         trader.preview(order(session="overnight"))
     with pytest.raises(t.TradingError, match="duration must be"):
@@ -417,3 +419,46 @@ def test_the_policy_reads_and_checks_the_default_hours_and_duration(tmp_path):
     path.write_text('[defaults]\nsession = "moon"\n')
     with pytest.raises(t.TradingError, match="session is normal or extended"):
         t.load_policy(path)
+
+
+@pytest.mark.parametrize(
+    "tif, session, expected",
+    [
+        ("day", "normal", ("DAY", "NORMAL")),
+        ("day", "extended", ("DAY", "SEAMLESS")),
+        ("gtc", "normal", ("GOOD_TILL_CANCEL", "NORMAL")),
+        ("gtc", "extended", ("GOOD_TILL_CANCEL", "SEAMLESS")),
+        ("day", "am", ("DAY", "AM")),
+        ("gtc", "pm", ("GOOD_TILL_CANCEL", "PM")),
+        ("fok", "normal", ("FILL_OR_KILL", "NORMAL")),
+        ("ioc", "normal", ("IMMEDIATE_OR_CANCEL", "NORMAL")),
+        ("end_of_week", "normal", ("END_OF_WEEK", "NORMAL")),
+        ("end_of_month", "normal", ("END_OF_MONTH", "NORMAL")),
+        ("next_end_of_month", "normal", ("NEXT_END_OF_MONTH", "NORMAL")),
+    ],
+)
+def test_every_schwab_duration_and_session_reaches_the_broker_as_asked(rig, tif, session, expected):
+    trader, send, *_ = rig
+    pv = trader.preview(order(quantity=1, tif=tif, session=session))
+    trader.confirm(pv["preview_id"], "BUY AAPL")
+    sent = body_of(send)
+    assert (sent["duration"], sent["session"]) == expected
+
+
+@pytest.mark.parametrize("tif", ["fok", "ioc", "end_of_week", "end_of_month", "next_end_of_month"])
+@pytest.mark.parametrize("session", ["extended", "am", "pm"])
+def test_only_day_and_gtc_orders_can_use_the_extended_pre_market_or_after_hours_sessions(
+    rig, tif, session
+):
+    trader, *_ = rig
+    with pytest.raises(t.TradingError, match="can be day or good till cancelled"):
+        trader.preview(order(quantity=1, tif=tif, session=session))
+
+
+def test_a_market_order_defaults_to_a_regular_hours_day_order_and_may_be_fill_or_kill(rig):
+    trader, send, *_ = rig
+    pv = trader.preview(order(kind="market", price=None, quantity=1))
+    assert (pv["order"]["session"], pv["order"]["tif"]) == ("normal", "day")
+    pv = trader.preview(order(kind="market", price=None, quantity=1, tif="fok"))
+    trader.confirm(pv["preview_id"], "BUY AAPL")
+    assert body_of(send)["duration"] == "FILL_OR_KILL"
