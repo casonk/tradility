@@ -38,3 +38,16 @@ label = "cold wallet"
 coin = "BTC"
 network = "BTC"
 address = "bc1q-example-address-not-real"
+
+# One-click order shapes for the order form (buy under / sell over the current mark). Leave this out to get
+# the built-in set: buy 1, 2, 4 and 8% under and sell 1, 2, 4 and 8% over. `tif` and `session` are optional.
+[[templates]]
+name = "Buy 2% under"
+side = "buy"
+offset_pct = -2
+
+[[templates]]
+name = "Sell 4% over, day"
+side = "sell"
+offset_pct = 4
+tif = "day"
