@@ -50,10 +50,40 @@ def main() -> int:
         metavar="COMMAND",
         help="Command that prints a Schwab access token or JSON containing access_token.",
     )
+    parser.add_argument(
+        "--profile-cache",
+        default="",
+        metavar="PATH",
+        help="Company-profile cache (default: tradility-profile-cache.json beside output).",
+    )
+    parser.add_argument(
+        "--profile-max-age-days",
+        type=int,
+        default=30,
+        metavar="DAYS",
+        help="Refresh cached qualitative profiles after DAYS (default: 30).",
+    )
+    parser.add_argument(
+        "--profile-workers",
+        type=int,
+        default=4,
+        metavar="COUNT",
+        help="Concurrent company-profile requests (default: 4).",
+    )
+    parser.add_argument(
+        "--skip-profiles",
+        action="store_true",
+        help="Do not fetch or attach qualitative company/fund profiles.",
+    )
     args = parser.parse_args()
 
     holdings_path = Path(args.holdings).resolve() if args.holdings else None
     output_path = Path(args.output).resolve()
+    profile_cache_path = (
+        Path(args.profile_cache).resolve()
+        if args.profile_cache
+        else output_path.with_name("tradility-profile-cache.json")
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"Fetching data for {'holdings file' if holdings_path else len(args.tickers)} ticker(s)…")
@@ -63,6 +93,10 @@ def main() -> int:
         history_period=args.period,
         source=args.source,
         schwab_token_command=args.schwab_token_command,
+        include_profiles=not args.skip_profiles,
+        profile_cache_path=profile_cache_path,
+        profile_max_age_days=args.profile_max_age_days,
+        profile_workers=args.profile_workers,
     )
 
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

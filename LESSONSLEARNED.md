@@ -30,3 +30,7 @@ Unlike `CHATHISTORY.md`, this file should keep only reusable lessons that should
   publish its component scores and methodology, and explicitly avoid implying
   analyst consensus or investment advice. Keep authorized third-party ratings
   as a separate source contract.
+- Slow-changing qualitative metadata belongs in a source-labeled TTL cache,
+  separate from daily price provenance. Preserve stale cached profiles through
+  transient provider failures, keep list payloads compact, and never present a
+  generated business summary as an official company mission or vision.

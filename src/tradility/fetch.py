@@ -161,3 +161,13 @@ def _fetch_yfinance_ohlcv(
         except Exception as exc:
             results[t] = OHLCVResult(ticker=t, error=str(exc), source="yfinance")
     return results
+
+
+def fetch_yfinance_profile(ticker: str) -> dict[str, Any]:
+    """Return Yahoo Finance's general-information mapping for one symbol.
+
+    Profile normalization and caching live in :mod:`tradility.profiles`; this
+    small function keeps the network boundary alongside the other yfinance
+    calls and gives tests one stable seam to replace.
+    """
+    return dict(yf.Ticker(ticker.strip().upper()).get_info() or {})

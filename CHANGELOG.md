@@ -4,6 +4,9 @@
 
 ### Added
 
+- Cached, sourced qualitative company/fund profiles with canonical names,
+  descriptions, sector/industry or fund metadata, location, website, exchange,
+  employee count, entity type, and retrieval timestamps.
 - Chart-ready historical closes, calendar-period returns, 52-week range, and a
   transparent component-based technical rating for stock detail consumers.
 - Schwab Trader API daily price-history adapter with an external token-command
@@ -14,6 +17,9 @@
 
 ### Changed
 
+- Scheduled and ordinary CLI analysis now enriches eligible tickers from a
+  30-day Yahoo profile cache by default; `--skip-profiles` keeps price-only runs
+  available.
 - `--period` now accepts long horizons such as `5y`, `10y`, and `max`; legacy
   integer day counts remain supported.
 
