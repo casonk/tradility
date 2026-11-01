@@ -116,6 +116,7 @@ def test_the_quote_endpoint_returns_the_mark_and_default_prices_and_status_lists
     assert status["defaults"] == {
         "kind": "limit",
         "time_in_force": "gtc",
+        "session": "normal",
         "buy_offset_pct": -2.5,
         "sell_offset_pct": 2.5,
     }
