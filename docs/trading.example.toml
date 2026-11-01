@@ -13,6 +13,7 @@ tickers = ["AAPL", "BTC-USD"]
 
 # The order form starts as a good-till-cancelled limit order this far from the current mark.
 [defaults]
+confirmation = "phrase"      # "phrase": type e.g. BUY AAPL to send; "button": click Place order (cancels and withdrawals always need a phrase)
 buy_offset_pct = -2.5
 sell_offset_pct = 2.5
 session = "extended"        # "normal" (regular hours) or "extended" (pre-market + after hours, Schwab SEAMLESS)
