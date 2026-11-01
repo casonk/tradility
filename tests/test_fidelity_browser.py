@@ -479,7 +479,7 @@ def test_vpn_status_is_read_from_the_vendors_output(monkeypatch):
         ("Status: Disconnected", ""),
     ):
         monkeypatch.setattr(
-            subprocess, "run", lambda *a, text=text, **k: SimpleNamespace(stdout=text)
+            subprocess, "run", lambda *a, _out=text, **k: SimpleNamespace(stdout=_out)
         )
         assert fb.vpn_connected() == expected
     monkeypatch.setattr(
