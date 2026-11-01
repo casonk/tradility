@@ -725,8 +725,9 @@ class Trader:
             return part / whole * 100 if whole > 0 else None
 
         after_here, after_all = value_here + sign * cost, value_all + sign * cost
-        funds = mine.get("cash_available_to_trade")
-        funds = mine.get("buying_power") if funds is None else funds
+        cash = mine.get("cash")
+        power = mine.get("spendable")
+        power = mine.get("buying_power") if power is None else power
         return {
             "symbol": symbol,
             "cost": cost,
@@ -739,13 +740,12 @@ class Trader:
                     "after": pct(after_here, total_here),
                 },
                 "total": total_here,
-                "cash_after": None if funds is None else float(funds) - sign * cost,
-                "buying_power_after": (
-                    None
-                    if mine.get("buying_power") is None
-                    else float(mine["buying_power"]) - sign * cost
-                ),
+                "cash_after": None if cash is None else float(cash) - sign * cost,
+                "buying_power_after": None if power is None else float(power) - sign * cost,
             },
+            "holdings": self.holdings_rows(
+                symbol, accounts, mine, sign * cost, sign * order.quantity
+            ),
             "everything": self._with_statements(
                 symbol, value_all, qty_all, total_all, cost, sign, order
             ),
@@ -758,6 +758,68 @@ class Trader:
                 },
                 "total": total_all,
             },
+        }
+
+    @staticmethod
+    def holdings_rows(
+        symbol: str,
+        accounts: list[dict[str, Any]],
+        chosen: dict[str, Any] | None = None,
+        value_change: float = 0.0,
+        qty_change: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        """Where *symbol* is held now, account by account (and after the order, in the chosen one)."""
+        rows = []
+        for a in accounts:
+            held = (a.get("holdings") or {}).get(symbol, {})
+            qty, value = float(held.get("quantity", 0.0)), float(held.get("market_value", 0.0))
+            total = float(a.get("total_value") or 0.0)
+            row = {
+                "label": a.get("label"),
+                "id": a.get("id"),
+                "broker": a.get("broker"),
+                "quantity": qty,
+                "value": value,
+                "percent": value / total * 100 if total > 0 else None,
+                "total": total,
+            }
+            if chosen is not None and a is chosen:
+                after = value + value_change
+                row.update(
+                    chosen=True,
+                    quantity_after=qty + qty_change,
+                    value_after=after,
+                    percent_after=after / total * 100 if total > 0 else None,
+                )
+            rows.append(row)
+        return rows
+
+    def holdings_for(self, ticker: str) -> dict[str, Any]:
+        """Where a ticker is held today: every live account and any statement institution."""
+        ticker = str(ticker).strip().upper()
+        if not TICKER.fullmatch(ticker):
+            raise TradingError("a ticker is required")
+        accounts = (self.accounts_loader().get("accounts", [])) if self.accounts_loader else []
+        statements = []
+        if self.statements_loader:
+            try:
+                other = self.statements_loader()
+            except Exception:  # noqa: BLE001 - an extra
+                other = {}
+            held = (other.get("holdings") or {}).get(ticker)
+            if held:
+                institutions = list(other["institutions"].values())
+                statements = [
+                    {
+                        "name": ", ".join(i["name"] for i in institutions),
+                        "as_of": max(i["as_of"] for i in institutions),
+                        **held,
+                    }
+                ]
+        return {
+            "symbol": ticker,
+            "accounts": self.holdings_rows(ticker, accounts),
+            "statements": statements,
         }
 
     def _with_statements(
