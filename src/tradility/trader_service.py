@@ -19,6 +19,7 @@ from typing import Any
 
 from tradility import accounts as accounts_module
 from tradility import trading as t
+from tradility import transfers as transfers_module
 
 DEFAULT_PORT = 8768
 MAX_BODY = 4096
@@ -35,6 +36,8 @@ class Service:
         self.trader = t.Trader(t.Policy(), {}, self.audit)
         self.account_loader = accounts_module.collect
         self._accounts: tuple[float, dict[str, Any]] | None = None
+        self.transfer_loader = transfers_module.collect
+        self._transfers: tuple[float, dict[str, Any]] | None = None
 
     def _current(self) -> t.Trader:
         policy = self.policy_loader()
@@ -51,6 +54,15 @@ class Service:
             self._accounts = (now, self.account_loader())
         return self._accounts[1]
 
+    def transfers(self) -> dict[str, Any]:
+        """Read-only deposit, withdrawal and transfer history, cached for a minute."""
+        import time
+
+        now = time.monotonic()
+        if self._transfers is None or now - self._transfers[0] > 60:
+            self._transfers = (now, self.transfer_loader())
+        return self._transfers[1]
+
     def status(self) -> dict[str, Any]:
         policy = self.policy_loader()
         return {
@@ -61,6 +73,16 @@ class Service:
             "daily_usd": policy.daily_usd,
             "price_band_pct": policy.price_band_pct,
             "schwab_accounts": list(policy.schwab_accounts),
+            "withdrawals": {
+                "enabled": policy.withdrawals_enabled,
+                "per_withdrawal_usd": policy.withdraw_per_usd,
+                "daily_withdrawal_usd": policy.withdraw_daily_usd,
+                "spent_today": self.audit.spent_today(events=t.Trader.WITHDRAW_EVENTS),
+                "destinations": [
+                    {"label": a[0], "coin": a[1], "network": a[2], "to": "…" + a[3][-6:]}
+                    for a in policy.withdraw_addresses
+                ],
+            },
             "defaults": {
                 "kind": "limit",
                 "time_in_force": "gtc",
@@ -83,6 +105,8 @@ class Service:
         try:
             if method == "GET" and path == "/status":
                 return HTTPStatus.OK, {"ok": True, **self.status()}
+            if method == "GET" and path == "/transfers":
+                return HTTPStatus.OK, {"ok": True, **self.transfers()}
             if method == "GET" and path == "/accounts":
                 return HTTPStatus.OK, {"ok": True, **self.accounts()}
             if method == "GET" and path.startswith("/quote/"):
@@ -90,7 +114,13 @@ class Service:
                     "ok": True,
                     **self._current().quote(path[len("/quote/") :]),
                 }
-            if method != "POST" or path not in {"/preview", "/confirm", "/cancel"}:
+            if method != "POST" or path not in {
+                "/preview",
+                "/confirm",
+                "/cancel",
+                "/withdraw/preview",
+                "/withdraw/confirm",
+            }:
                 return HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"}
             try:
                 data = json.loads(body or b"{}")
@@ -99,6 +129,13 @@ class Service:
             if not isinstance(data, dict):
                 return HTTPStatus.BAD_REQUEST, {"ok": False, "error": "send a JSON object"}
             trader = self._current()
+            if path == "/withdraw/preview":
+                return HTTPStatus.OK, {"ok": True, **trader.withdraw_preview(data)}
+            if path == "/withdraw/confirm":
+                return HTTPStatus.OK, {
+                    "ok": True,
+                    **trader.withdraw_confirm(data.get("preview_id", ""), data.get("phrase", "")),
+                }
             if path == "/preview":
                 return HTTPStatus.OK, {"ok": True, **trader.preview(data)}
             if path == "/confirm":

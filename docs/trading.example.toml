@@ -22,3 +22,17 @@ binance = true
 
 [schwab]
 accounts = ["1234", "5678"]   # the last digits of each Schwab account that may be traded; each order names one
+
+# Withdrawals (Binance.US only) are a separate switch, off by default. They go only to the addresses
+# listed here, under their own caps, after a preview and a typed phrase. They need a different API key
+# (withdrawals on, ideally limited to this machine's IP) behind TRADILITY_BINANCE_WITHDRAW_CREDENTIAL_COMMAND.
+[withdrawals]
+enabled = false
+per_withdrawal_usd = 500
+daily_withdrawal_usd = 1000
+
+[[withdrawals.addresses]]
+label = "cold wallet"
+coin = "BTC"
+network = "BTC"
+address = "bc1q-example-address-not-real"
