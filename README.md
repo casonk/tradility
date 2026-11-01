@@ -213,3 +213,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Live orders (read-only)
+
+`python -m tradility.orders --holdings HOLDINGS.json --output exports/tradility-orders.json` lists open
+orders and order history from Schwab and Binance.US with GET requests only; it cannot place, change or
+cancel an order. Schwab reuses `TRADILITY_SCHWAB_TOKEN_COMMAND` / `TRADILITY_SCHWAB_ACCESS_TOKEN`.
+Binance.US needs `TRADILITY_BINANCE_API_KEY` and `TRADILITY_BINANCE_API_SECRET`, or
+`TRADILITY_BINANCE_CREDENTIAL_COMMAND` (a command that prints `{"api_key": "...", "api_secret": "..."}`).
+Use a read-only API key. The export is owner-only and gitignored with the rest of `exports/`.
