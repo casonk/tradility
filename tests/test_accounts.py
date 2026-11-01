@@ -117,3 +117,39 @@ def test_this_module_only_reads():
     assert not re.search(
         r"method\s*=|\.post\(|\bPOST\b|\bDELETE\b|\bPUT\b", Path(a.__file__).read_text()
     )
+
+
+def test_holdings_are_collected_for_sizing_orders_and_stripped_from_the_page_feed(tmp_path):
+    item = json.loads(json.dumps(SCHWAB))
+    item["securitiesAccount"]["positions"] = [
+        {
+            "instrument": {"symbol": "aapl"},
+            "longQuantity": 4,
+            "shortQuantity": 0,
+            "marketValue": 800.0,
+        },
+        {
+            "instrument": {"symbol": "AAPL"},
+            "longQuantity": 1,
+            "shortQuantity": 0,
+            "marketValue": 200.0,
+        },
+    ]
+    assert a.schwab_account(item)["holdings"] == {"AAPL": {"quantity": 5.0, "market_value": 1000.0}}
+    got = a.binance_account(
+        {
+            "balances": [
+                {"asset": "BTC", "free": "0.5", "locked": "0"},
+                {"asset": "USD", "free": "10", "locked": "0"},
+            ]
+        },
+        {"BTC": 100.0},
+    )
+    assert got["holdings"] == {"BTC-USD": {"quantity": 0.5, "market_value": 50.0}}
+    svc = ts.Service(lambda: ts.t.Policy())
+    svc.account_loader = lambda: {"accounts": [{"id": "x", "holdings": {"A": {}}}], "sources": {}}
+    good = {"Host": "127.0.0.1:8768", "X-Tradility-Trader": "1"}
+    assert "holdings" not in svc.handle("GET", "/accounts", good, b"")[1]["accounts"][0]
+    assert svc.trader.accounts_loader()["accounts"][0]["holdings"] == {
+        "A": {}
+    }  # kept for the impact
