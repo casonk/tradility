@@ -33,7 +33,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
@@ -41,8 +41,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-import tomllib
-
+from tradility._compat import UTC, tomllib
 from tradility.orders import BINANCE_BASE, SCHWAB_BASE
 from tradility.sources.schwab import resolve_access_token
 

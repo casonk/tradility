@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import os
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
+from tradility._compat import UTC
 from tradility.accounts import _num
 from tradility.orders import (
     BINANCE_BASE,
