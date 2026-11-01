@@ -154,6 +154,8 @@ def schwab_orders(raw: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
                 "date": entered,
                 "note": "",
                 **({"account": order["_account"]} if order.get("_account") else {}),
+                "duration": str(order.get("duration", "")).lower(),
+                "session": str(order.get("session", "")).lower(),
             }
         )
     return out
