@@ -56,7 +56,13 @@ def schwab_account(item: dict[str, Any]) -> dict[str, Any]:
         "margin_eligible": margin,
         "total_value": _num(now.get("liquidationValue")),
         "cash": _num(now.get("cashBalance")),
-        "cash_available_to_trade": _num(initial.get("cashAvailableForTrading")),
+        # what a new stock order can use: Schwab's projected stock buying power, which already
+        # reserves for open orders, else the current buying power (cash only for a cash account)
+        "spendable": (
+            _num(projected.get("stockBuyingPower"))
+            if projected.get("stockBuyingPower") is not None
+            else _num(now.get("buyingPower"))
+        ),
         "buying_power": _num(now.get("buyingPower")),
         "available_funds": _num(now.get("availableFunds")),
         "day_trading_buying_power": _num(now.get("dayTradingBuyingPower")) if margin else None,
@@ -129,7 +135,7 @@ def binance_account(account: dict[str, Any], prices: dict[str, float]) -> dict[s
         "margin_eligible": False,
         "total_value": total,
         "cash": cash,
-        "cash_available_to_trade": cash,
+        "spendable": cash,
         "buying_power": cash,
         "available_funds": cash,
         "can_trade": bool(account.get("canTrade")),
