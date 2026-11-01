@@ -48,8 +48,20 @@ from tradility.sources.schwab import resolve_access_token
 
 SIDES = ("buy", "sell")
 KINDS = ("market", "limit")
-SESSIONS = ("normal", "extended")
-TIFS = ("gtc", "day")
+# Schwab's trading sessions: regular hours, pre-market only (AM), after-hours only (PM) and the
+# extended session that spans all three (SEAMLESS); and its order durations.
+SESSIONS = ("normal", "extended", "am", "pm")
+SESSION_API = {"normal": "NORMAL", "extended": "SEAMLESS", "am": "AM", "pm": "PM"}
+TIFS = ("day", "gtc", "fok", "ioc", "end_of_week", "end_of_month", "next_end_of_month")
+TIF_API = {
+    "day": "DAY",
+    "gtc": "GOOD_TILL_CANCEL",
+    "fok": "FILL_OR_KILL",
+    "ioc": "IMMEDIATE_OR_CANCEL",
+    "end_of_week": "END_OF_WEEK",
+    "end_of_month": "END_OF_MONTH",
+    "next_end_of_month": "NEXT_END_OF_MONTH",
+}
 TICKER = re.compile(r"[A-Z0-9][A-Z0-9.^=-]{0,19}")
 PREVIEW_TTL_SECONDS = 120
 MAX_PREVIEWS = 50
@@ -214,11 +226,19 @@ def parse_order(raw: Any) -> Order:
     session = str(raw.get("session", "normal")).strip().lower()
     tif = str(raw.get("tif", "gtc")).strip().lower()
     if session not in SESSIONS:
-        raise TradingError("hours must be regular or extended")
+        raise TradingError("hours must be one of " + ", ".join(SESSIONS))
     if tif not in TIFS:
-        raise TradingError("duration must be gtc or day")
-    if kind == "market" and session == "extended":
-        raise TradingError("a market order cannot be placed in extended hours; use a limit order")
+        raise TradingError("duration must be one of " + ", ".join(TIFS))
+    if kind == "market" and session != "normal":
+        raise TradingError("a market order can only trade in regular hours; use a limit order")
+    if kind == "market" and tif in {"gtc", "end_of_week", "end_of_month", "next_end_of_month"}:
+        raise TradingError(
+            "a market order cannot rest; choose day, fill or kill or immediate or cancel"
+        )
+    if session != "normal" and tif not in {"day", "gtc"}:
+        raise TradingError(
+            "extended, pre-market and after-hours orders can be day or good till cancelled"
+        )
     return Order(
         ticker, side, kind, quantity, price, str(raw.get("account", "")).strip(), session, tif
     )
@@ -357,12 +377,8 @@ class SchwabTrader:
     def body(order: Order) -> bytes:
         payload: dict[str, Any] = {
             "orderType": "MARKET" if order.kind == "market" else "LIMIT",
-            # SEAMLESS is Schwab's extended session: pre-market, regular and after-hours in one order
-            "session": "SEAMLESS" if order.session == "extended" else "NORMAL",
-            # a market order can only be for the day
-            "duration": (
-                "GOOD_TILL_CANCEL" if order.kind == "limit" and order.tif == "gtc" else "DAY"
-            ),
+            "session": SESSION_API[order.session],
+            "duration": TIF_API[order.tif],
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
                 {
@@ -650,7 +666,12 @@ class Trader:
 
     def preview(self, raw: Any) -> dict[str, Any]:
         if isinstance(raw, dict):  # the policy's defaults apply to whatever the request leaves out
-            raw = {"session": self.policy.default_session, "tif": self.policy.default_tif, **raw}
+            defaults = {"session": self.policy.default_session, "tif": self.policy.default_tif}
+            if (
+                raw.get("kind") == "market"
+            ):  # a market order is a regular-hours day order unless told
+                defaults = {"session": "normal", "tif": "day"}
+            raw = {**defaults, **raw}
         order = parse_order(raw)
         broker = self._broker(order)
         last = broker.last_price(order.ticker)
