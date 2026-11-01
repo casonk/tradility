@@ -15,7 +15,7 @@ POLICY = t.Policy(
     price_band_pct=5,
     brokers=("schwab", "binance"),
     tickers=frozenset({"AAPL", "BTC-USD"}),
-    schwab_account="1234",
+    schwab_accounts=("1234", "77"),
 )
 
 
@@ -41,7 +41,8 @@ class Fake:
                 ],
             )
         if "/marketdata/" in url:
-            return 200, {}, {"AAPL": {"quote": {"lastPrice": 100.0}}}
+            symbol = url.split("symbols=")[1].split("&")[0]
+            return 200, {}, {symbol: {"quote": {"lastPrice": 100.0}}}
         if "ticker/price" in url:
             return 200, {}, {"price": "50000"}
         if url.endswith("previewOrder"):
@@ -63,7 +64,7 @@ class Fake:
 def rig(tmp_path):
     send = Fake()
     brokers = {
-        "schwab": lambda: t.SchwabTrader("tok", "1234", send),
+        "schwab": lambda: t.SchwabTrader("tok", send),
         "binance": lambda: t.BinanceTrader("KEY", "SECRET", send, clock=lambda: 1.0),
     }
     audit = t.Audit(tmp_path / "state" / "audit.jsonl")
@@ -73,7 +74,15 @@ def rig(tmp_path):
 
 
 def order(**kw):
-    return {"ticker": "AAPL", "side": "buy", "kind": "limit", "quantity": 5, "price": 100, **kw}
+    return {
+        "ticker": "AAPL",
+        "side": "buy",
+        "kind": "limit",
+        "quantity": 5,
+        "price": 100,
+        "account": "1234",
+        **kw,
+    }
 
 
 def placements(send):
@@ -196,7 +205,7 @@ def test_a_broker_refusal_is_audited_and_not_counted(rig):
             return 400, {}, {"message": "insufficient funds"}
         return send_original(method, url, headers, body)
 
-    trader.brokers["schwab"] = lambda: t.SchwabTrader("tok", "1234", reject)
+    trader.brokers["schwab"] = lambda: t.SchwabTrader("tok", reject)
     with pytest.raises(t.TradingError, match="insufficient funds"):
         trader.confirm(pv["preview_id"], "BUY AAPL")
     assert audit.spent_today() == 0
@@ -222,25 +231,30 @@ def test_crypto_goes_to_binance_signed_with_a_client_id_and_the_test_endpoint_fo
 
 def test_the_schwab_account_must_match_exactly_one_account(rig):
     trader, send, *_ = rig
-    trader.brokers["schwab"] = lambda: t.SchwabTrader("tok", "77", send)  # matches no account
     with pytest.raises(t.TradingError, match="exactly one"):
-        trader.preview(order())
+        trader.preview(order(account="77"))  # allowed by the policy but matches no real account
+    with pytest.raises(t.TradingError, match="accounts the policy allows"):
+        trader.preview(order(account="9999"))
+    with pytest.raises(t.TradingError, match="choose"):
+        trader.preview(order(account=""))
 
 
 def test_cancelling_needs_its_own_phrase(rig):
     trader, send, audit, _ = rig
     with pytest.raises(t.TradingError, match="CANCEL 777"):
         trader.cancel("schwab", "777", "yes")
-    assert trader.cancel("schwab", "777", "CANCEL 777")["cancelled"] is True
+    with pytest.raises(t.TradingError, match="accounts the policy allows"):
+        trader.cancel("schwab", "777", "CANCEL 777")
+    assert trader.cancel("schwab", "777", "CANCEL 777", account="1234")["cancelled"] is True
     assert any(c[0] == "DELETE" and c[1].endswith("/orders/777") for c in send.calls)
     with pytest.raises(t.TradingError):
-        trader.cancel("schwab", "../x", "CANCEL ../x")
+        trader.cancel("schwab", "../x", "CANCEL ../x", account="1234")
 
 
 def test_the_policy_file_must_be_owner_only_and_valid(tmp_path):
     path = tmp_path / "trading.toml"
     path.write_text(
-        'enabled = true\nper_order_usd = 100\ndaily_usd = 200\nprice_band_pct = 3\ntickers = ["aapl"]\n[brokers]\nschwab = true\n[schwab]\naccount = "1234"\n'
+        'enabled = true\nper_order_usd = 100\ndaily_usd = 200\nprice_band_pct = 3\ntickers = ["aapl"]\n[brokers]\nschwab = true\n[schwab]\naccounts = ["1234"]\n'
     )
     os.chmod(path, 0o644)
     with pytest.raises(t.TradingError, match="owner-only"):
@@ -264,3 +278,43 @@ def test_schwab_gets_carry_no_content_type_and_posts_do(rig):
         ct is None for m, ct in sent if m == "GET" and ct is not None
     ) is True
     assert ("POST", "application/json") in sent
+
+
+def test_a_limit_order_rests_until_cancelled_and_a_market_order_is_for_the_day(rig):
+    trader, send, *_ = rig
+    for kind, price, duration in (("limit", 100, "GOOD_TILL_CANCEL"), ("market", None, "DAY")):
+        pv = trader.preview(order(kind=kind, price=price))
+        trader.confirm(pv["preview_id"], "BUY AAPL")
+        assert json.loads(placements(send)[-1][2])["duration"] == duration
+
+
+def test_the_default_prices_sit_two_and_a_half_percent_either_side_of_the_mark(rig):
+    trader, *_ = rig
+    got = trader.quote("aapl")
+    assert got["mark"] == 100.0 and got["buy_price"] == 97.5 and got["sell_price"] == 102.5
+    with pytest.raises(t.TradingError, match="allowlist"):
+        trader.quote("MSFT")
+
+
+def test_a_star_in_the_allowlist_allows_any_ticker_but_keeps_every_other_limit(tmp_path):
+    send = Fake()
+    open_policy = t.Policy(**{**POLICY.__dict__, "tickers": frozenset({"*"})})
+    trader = t.Trader(
+        open_policy, {"schwab": lambda: t.SchwabTrader("tok", send)}, t.Audit(tmp_path / "a.jsonl")
+    )
+    assert trader.preview(order(ticker="MSFT", quantity=1))["phrase"] == "BUY MSFT"
+    with pytest.raises(t.TradingError, match="per-order limit"):
+        trader.preview(order(ticker="MSFT", quantity=50))
+    assert open_policy.allows("ANYTHING") and not POLICY.allows("ANYTHING")
+
+
+def test_the_quote_uses_the_mark_then_the_last_trade(rig):
+    _, send, *_ = rig
+    sb = t.SchwabTrader(
+        "tok", lambda m, u, h, b: (200, {}, {"AAPL": {"quote": {"mark": 51.0, "lastPrice": 50.0}}})
+    )
+    assert sb.last_price("AAPL") == 51.0
+    sb = t.SchwabTrader(
+        "tok", lambda m, u, h, b: (200, {}, {"AAPL": {"quote": {"lastPrice": 50.0}}})
+    )
+    assert sb.last_price("AAPL") == 50.0
