@@ -11,6 +11,16 @@ from tradility import fidelity_browser as fb
 
 MOCK = Path(__file__).parent / "fixtures" / "fidelity_trade_mock.html"
 
+
+REAL_VPN_CHECK = fb.vpn_connected
+
+
+@pytest.fixture(autouse=True)
+def no_vpn(monkeypatch):
+    """This machine may have a VPN up; the mock needs none, and one test turns it on."""
+    monkeypatch.setattr(fb, "vpn_connected", lambda: "")
+
+
 LIMIT = fb.Ticket("4917", "VWO", "buy", "limit", 2, 54.12, "gtc", "normal")
 
 
@@ -433,3 +443,46 @@ def test_the_policy_reads_the_fidelity_automation_mode(tmp_path):
         t.load_policy(path)
     path.write_text("enabled = true\n")
     assert t.load_policy(path).fidelity_automation == "off"  # off unless asked for
+
+
+def test_the_driver_will_not_try_a_login_while_a_vpn_is_connected(monkeypatch):
+    class Page:
+        url = "about:blank"
+
+        def goto(self, *a, **k):  # pragma: no cover - must not be reached
+            raise AssertionError("navigated while a VPN was connected")
+
+    monkeypatch.setattr(fb, "vpn_connected", lambda: "NordVPN")
+    with pytest.raises(fb.FidelityError, match="rejects logins from VPN addresses"):
+        fb.FidelityDriver(Page()).open()
+    monkeypatch.setenv("TRADILITY_FIDELITY_ALLOW_VPN", "1")
+    calls = []
+
+    class Free(Page):
+        def goto(self, url):
+            calls.append(url)
+
+        def wait_for_load_state(self, *a):
+            pass
+
+    fb.FidelityDriver(Free()).open()
+    assert calls == [fb.TRADE_URL]
+
+
+def test_vpn_status_is_read_from_the_vendors_output(monkeypatch):
+    import subprocess
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(fb, "vpn_connected", REAL_VPN_CHECK)
+    for text, expected in (
+        ("Status: Connected\nServer: x", "NordVPN"),
+        ("Status: Disconnected", ""),
+    ):
+        monkeypatch.setattr(
+            subprocess, "run", lambda *a, text=text, **k: SimpleNamespace(stdout=text)
+        )
+        assert fb.vpn_connected() == expected
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError())
+    )
+    assert fb.vpn_connected() == ""

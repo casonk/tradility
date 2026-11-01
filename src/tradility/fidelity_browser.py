@@ -23,6 +23,7 @@ ticket and never against Fidelity.
 from __future__ import annotations
 
 import contextlib
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -154,6 +155,19 @@ def verify_preview(text: str, ticket: Ticket) -> list[str]:
     return confirmed
 
 
+def vpn_connected() -> str:
+    """The name of a connected consumer VPN, or "" (also when it cannot be told)."""
+    import subprocess
+
+    try:
+        done = subprocess.run(  # noqa: S603
+            ["nordvpn", "status"], check=False, capture_output=True, text=True, timeout=10
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return "NordVPN" if re.search(r"Status:\s*Connected", done.stdout or "", re.I) else ""
+
+
 class FidelityDriver:
     """Drives one Fidelity trade ticket on an open Playwright page."""
 
@@ -200,6 +214,14 @@ class FidelityDriver:
     # -- steps -----------------------------------------------------------------------------------
 
     def open(self) -> None:
+        # Fidelity refuses a login from a VPN address ("we can't complete this action right now"), and
+        # every refused attempt counts against the account, so do not try while one is connected.
+        vpn = "" if os.environ.get("TRADILITY_FIDELITY_ALLOW_VPN") == "1" else vpn_connected()
+        if vpn:
+            raise FidelityError(
+                f"{vpn} is connected and Fidelity rejects logins from VPN addresses: "
+                "pause the VPN (for example `nordvpn pause 5m`) and try again"
+            )
         self.page.goto(TRADE_URL)
         self.page.wait_for_load_state("domcontentloaded")
         if self._signed_out():
@@ -281,8 +303,6 @@ class FidelityDriver:
 
 
 def profile_dir() -> Path:
-    import os
-
     base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
     return Path(os.environ.get(PROFILE_ENV, base / "tradility" / "fidelity-profile"))
 
