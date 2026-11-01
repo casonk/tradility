@@ -37,7 +37,7 @@ SCHWAB_BASE = "https://api.schwabapi.com"
 BINANCE_BASE = "https://api.binance.us"
 SCHWAB_WINDOW_DAYS = 60  # the orders endpoint takes at most a 60-day entered-time range
 QUOTES = ("USDT", "USDC", "USD")
-MAX_BINANCE_SYMBOLS = 40
+MAX_BINANCE_SYMBOLS = 120
 
 Json = Any
 GetJson = Callable[[str, dict[str, str]], Json]
@@ -251,8 +251,12 @@ def fetch_binance(
     symbols: list[str],
     get: GetJson,
     clock: Callable[[], float] = time.time,
-) -> dict[str, list[dict[str, Any]]]:
-    """Open orders (all symbols) plus the history of each held symbol (signed read-only GETs)."""
+) -> tuple[dict[str, list[dict[str, Any]]], int]:
+    """Open orders (all symbols) plus the history of each held symbol (signed read-only GETs).
+
+    Returns the orders and how many held symbols Binance.US does not list (HTTP 400, "Invalid
+    symbol"): coins held elsewhere have no pair there and are skipped, not treated as a failure.
+    """
     headers = {"X-MBX-APIKEY": key}
 
     def signed(path: str, **params: str) -> Json:
@@ -263,12 +267,19 @@ def fetch_binance(
     opened = signed("/api/v3/openOrders")
     if isinstance(opened, list):
         raw.extend(o for o in opened if isinstance(o, dict))
+    skipped = 0
     for symbol in symbols[:MAX_BINANCE_SYMBOLS]:
-        history = signed("/api/v3/allOrders", symbol=symbol, limit="1000")
+        try:
+            history = signed("/api/v3/allOrders", symbol=symbol, limit="1000")
+        except HTTPError as exc:
+            if exc.code != 400:
+                raise
+            skipped += 1
+            continue
         if isinstance(history, list):
             raw.extend(o for o in history if isinstance(o, dict))
     unique = {(o.get("symbol"), o.get("orderId")): o for o in raw}
-    return binance_orders(list(unique.values()))
+    return binance_orders(list(unique.values())), skipped
 
 
 def held_binance_symbols(holdings: list[dict[str, Any]]) -> list[str]:
@@ -347,8 +358,12 @@ def collect(
             sources["binance"] = {"ok": False, "error": error}
         else:
             try:
-                found = fetch_binance(key, secret, held_binance_symbols(holdings), get)
-                sources["binance"] = {"ok": True, "orders": merge(found)}
+                found, skipped = fetch_binance(key, secret, held_binance_symbols(holdings), get)
+                sources["binance"] = {
+                    "ok": True,
+                    "orders": merge(found),
+                    "unlisted_symbols": skipped,
+                }
             except (HTTPError, URLError, OSError, ValueError) as exc:
                 sources["binance"] = {"ok": False, "error": f"request failed: {type(exc).__name__}"}
     for rows in orders.values():

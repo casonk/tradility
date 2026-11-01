@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Order fetch: a held coin Binance.US does not list (HTTP 400 Invalid symbol) is skipped and counted as `unlisted_symbols` instead of failing the whole Binance source; other errors still fail it. The symbol cap rose to 120.
 - Add read-only live orders: `python -m tradility.orders` fetches order history and open orders from Schwab (the same token command as price history) and Binance.US (signed GETs; `TRADILITY_BINANCE_API_KEY`/`TRADILITY_BINANCE_API_SECRET` or `TRADILITY_BINANCE_CREDENTIAL_COMMAND` printing `{api_key, api_secret}` JSON) and writes one owner-only `exports/tradility-orders.json` that Clockwork reads. The module only issues GET requests, never logs or stores a credential, and reports a failing source by class name only. The scheduled run fetches orders after the analysis and never fails on them (`TRADILITY_FETCH_ORDERS=0` skips it).
 ### Added
 

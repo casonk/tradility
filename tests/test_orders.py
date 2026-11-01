@@ -120,7 +120,8 @@ def test_binance_requests_are_signed_read_only_and_cover_held_symbols_once():
         assert headers == {"X-MBX-APIKEY": "key"}
         return [BINANCE_OPEN] if "openOrders" in url or "BTCUSD" in url else []
 
-    got = o.fetch_binance("key", "secret", ["BTCUSD", "ETHUSD"], get, clock=lambda: 1.0)
+    got, skipped = o.fetch_binance("key", "secret", ["BTCUSD", "ETHUSD"], get, clock=lambda: 1.0)
+    assert skipped == 0
     assert [u.split("?")[0].rsplit("/", 1)[1] for u in urls] == [
         "openOrders",
         "allOrders",
@@ -170,3 +171,21 @@ def test_unconfigured_sources_say_so_and_the_export_is_owner_only(tmp_path):
 def test_this_module_can_only_read():
     source = (Path(o.__file__)).read_text()
     assert not re.search(r"method\s*=|\.post\(|\bPOST\b|\bDELETE\b|\bPUT\b", source)
+
+
+def test_a_symbol_binance_us_does_not_list_is_skipped_but_other_errors_still_fail():
+    def get(url, headers):
+        if "NOPEUSD" in url:
+            raise HTTPError(url, 400, "Invalid symbol", {}, None)
+        if "BOOMUSD" in url:
+            raise HTTPError(url, 401, "no", {}, None)
+        return [BINANCE_OPEN] if "openOrders" in url else []
+
+    got, skipped = o.fetch_binance("k", "s", ["NOPEUSD", "BTCUSD"], get, clock=lambda: 1.0)
+    assert skipped == 1 and len(got["BTC-USD"]) == 1
+    try:
+        o.fetch_binance("k", "s", ["BOOMUSD"], get, clock=lambda: 1.0)
+    except HTTPError as exc:
+        assert exc.code == 401
+    else:
+        raise AssertionError("a 401 must not be swallowed")
