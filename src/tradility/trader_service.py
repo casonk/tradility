@@ -17,6 +17,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from tradility import accounts as accounts_module
 from tradility import trading as t
 
 DEFAULT_PORT = 8768
@@ -25,17 +26,30 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 
 
 class Service:
+    ACCOUNTS_TTL = 20.0  # seconds; the page can be refreshed often without hammering the brokers
+
     def __init__(
         self, policy_loader=t.load_policy, audit: t.Audit | None = None, send: t.Send = t.http_send
     ) -> None:
         self.policy_loader, self.audit, self.send = policy_loader, audit or t.Audit(), send
         self.trader = t.Trader(t.Policy(), {}, self.audit)
+        self.account_loader = accounts_module.collect
+        self._accounts: tuple[float, dict[str, Any]] | None = None
 
     def _current(self) -> t.Trader:
         policy = self.policy_loader()
         self.trader.policy = policy
         self.trader.brokers = t.build_brokers(policy, send=self.send)
         return self.trader
+
+    def accounts(self) -> dict[str, Any]:
+        """Read-only account details, cached briefly."""
+        import time
+
+        now = time.monotonic()
+        if self._accounts is None or now - self._accounts[0] > self.ACCOUNTS_TTL:
+            self._accounts = (now, self.account_loader())
+        return self._accounts[1]
 
     def status(self) -> dict[str, Any]:
         policy = self.policy_loader()
@@ -69,6 +83,8 @@ class Service:
         try:
             if method == "GET" and path == "/status":
                 return HTTPStatus.OK, {"ok": True, **self.status()}
+            if method == "GET" and path == "/accounts":
+                return HTTPStatus.OK, {"ok": True, **self.accounts()}
             if method == "GET" and path.startswith("/quote/"):
                 return HTTPStatus.OK, {
                     "ok": True,
