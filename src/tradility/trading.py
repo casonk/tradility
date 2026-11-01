@@ -34,6 +34,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -376,6 +377,49 @@ class BinanceTrader:
         self, key: str, secret: str, send: Send, clock: Callable[[], float] = time.time
     ) -> None:
         self.key, self.secret, self.send, self.clock = key, secret, send, clock
+        self._rules: dict[str, dict[str, Decimal]] = {}
+
+    def rules(self, ticker: str) -> dict[str, Decimal]:
+        """The pair's tick size, lot step, minimum quantity and minimum notional (public, cached)."""
+        symbol = self.symbol(ticker)
+        if symbol in self._rules:
+            return self._rules[symbol]
+        status, _, payload = self.send(
+            "GET", f"{BINANCE_BASE}/api/v3/exchangeInfo?{urlencode({'symbol': symbol})}", {}, None
+        )
+        try:
+            filters = {f["filterType"]: f for f in payload["symbols"][0]["filters"]}
+            rules = {
+                "tick": Decimal(str(filters["PRICE_FILTER"]["tickSize"])),
+                "step": Decimal(str(filters["LOT_SIZE"]["stepSize"])),
+                "min_qty": Decimal(str(filters["LOT_SIZE"]["minQty"])),
+            }
+            notional = filters.get("NOTIONAL") or filters.get("MIN_NOTIONAL") or {}
+            rules["min_notional"] = Decimal(str(notional.get("minNotional", "0")))
+        except (KeyError, IndexError, TypeError, ValueError, ArithmeticError) as exc:
+            raise TradingError(f"Binance.US does not list {symbol} (HTTP {status})") from exc
+        self._rules[symbol] = rules
+        return rules
+
+    def round_price(self, ticker: str, price: float) -> float:
+        """*price* moved to the nearest multiple of the pair's tick size."""
+        tick = self.rules(ticker)["tick"]
+        return float((Decimal(str(price)) / tick).to_integral_value(ROUND_HALF_UP) * tick)
+
+    def check_order(self, order: Order) -> None:
+        """Refuse an order the exchange's filters would reject, naming what is allowed."""
+        rules = self.rules(order.ticker)
+        qty = Decimal(str(order.quantity))
+        if qty < rules["min_qty"] or qty % rules["step"] != 0:
+            step, least = rules["step"].normalize(), rules["min_qty"].normalize()
+            raise TradingError(f"quantity must be a multiple of {step:f}, at least {least:f}")
+        if order.price is not None:
+            price = Decimal(str(order.price))
+            if price % rules["tick"] != 0:
+                raise TradingError(f"price must be a multiple of {rules['tick'].normalize():f}")
+            if qty * price < rules["min_notional"]:
+                least = rules["min_notional"].normalize()
+                raise TradingError(f"the order is below Binance.US's ${least:f} minimum")
 
     def _signed(self, method: str, path: str, params: dict[str, Any]) -> tuple[int, Any]:
         query = urlencode({**params, "recvWindow": 10000, "timestamp": int(self.clock() * 1000)})
@@ -488,13 +532,19 @@ class Trader:
         name = "binance" if ticker.endswith("-USD") else "schwab"
         if name not in self.policy.brokers or name not in self.brokers:
             raise TradingError(f"{name} is not enabled for trading")
-        mark = self.brokers[name]().last_price(ticker)
+        broker = self.brokers[name]()
+        mark = broker.last_price(ticker)
         places = 2 if mark >= 1 else 6
+
+        def default(offset: float) -> float:
+            price = round(mark * (1 + offset / 100), places)
+            return broker.round_price(ticker, price) if hasattr(broker, "round_price") else price
+
         return {
             "ticker": ticker,
             "mark": mark,
-            "buy_price": round(mark * (1 + self.policy.buy_offset_pct / 100), places),
-            "sell_price": round(mark * (1 + self.policy.sell_offset_pct / 100), places),
+            "buy_price": default(self.policy.buy_offset_pct),
+            "sell_price": default(self.policy.sell_offset_pct),
         }
 
     def _limits(self, order: Order, last: float) -> float:
@@ -521,6 +571,8 @@ class Trader:
         order = parse_order(raw)
         broker = self._broker(order)
         last = broker.last_price(order.ticker)
+        if hasattr(broker, "check_order"):
+            broker.check_order(order)
         notional = self._limits(order, last)
         checked = broker.preview(order)
         token = secrets.token_urlsafe(18)
