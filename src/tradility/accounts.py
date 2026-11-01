@@ -198,6 +198,7 @@ def statement_accounts(path: Any) -> dict[str, Any]:
         return {}
     institutions: dict[str, dict[str, Any]] = {}
     holdings: dict[str, dict[str, float]] = {}
+    accounts: dict[tuple[str, str], dict[str, Any]] = {}
     for holding in payload.get("holdings", []) if isinstance(payload, dict) else []:
         symbol = str(holding.get("ticker", "")).upper()
         for acct in holding.get("accounts") or []:
@@ -205,6 +206,30 @@ def statement_accounts(path: Any) -> dict[str, Any]:
             if code in LIVE_INSTITUTIONS or not code:
                 continue
             value = _num(acct.get("ending_value")) or 0.0
+            # per account too (a statement account is told apart by its last digits and its type)
+            mask = str(acct.get("account_mask", "")).replace("*", "")[-4:]
+            key = (code, f"{mask}|{acct.get('account_subtype', '')}")
+            one = accounts.setdefault(
+                key,
+                {
+                    "broker": INSTITUTION_NAMES.get(code, code).lower().replace(" ", ""),
+                    "id": mask,
+                    "key": f"{mask}:{acct.get('account_subtype', '')}",
+                    "label": f"{INSTITUTION_NAMES.get(code, code.upper())} …{mask}",
+                    "name": str(acct.get("account_name", "")),
+                    "type": str(acct.get("account_subtype", "")),
+                    "total_value": 0.0,
+                    "as_of": "",
+                    "holdings": {},
+                    "statement": True,
+                },
+            )
+            one["total_value"] += value
+            one["as_of"] = max(one["as_of"], str(acct.get("period_end", "")))
+            if symbol:
+                slot = one["holdings"].setdefault(symbol, {"quantity": 0.0, "market_value": 0.0})
+                slot["quantity"] += _num(acct.get("quantity")) or 0.0
+                slot["market_value"] += value
             row = institutions.setdefault(
                 code, {"name": INSTITUTION_NAMES.get(code, code.upper()), "total": 0.0, "as_of": ""}
             )
@@ -214,7 +239,9 @@ def statement_accounts(path: Any) -> dict[str, Any]:
                 slot = holdings.setdefault(symbol, {"quantity": 0.0, "market_value": 0.0})
                 slot["quantity"] += _num(acct.get("quantity")) or 0.0
                 slot["market_value"] += value
-    return {"institutions": institutions, "holdings": holdings} if institutions else {}
+    if not institutions:
+        return {}
+    return {"institutions": institutions, "holdings": holdings, "accounts": list(accounts.values())}
 
 
 def collect(get: GetJson = http_get_json, env: dict[str, str] | None = None) -> dict[str, Any]:

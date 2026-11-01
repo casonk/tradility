@@ -268,3 +268,63 @@ def test_schwab_positions_carry_their_average_price_for_the_cost_of_a_position()
     held = a.schwab_account(item)["holdings"]
     assert held["VWO"]["average_price"] == pytest.approx(58.67)
     assert held["NOPRICE"]["average_price"] is None
+
+
+def test_statement_accounts_are_listed_one_by_one_with_their_holdings(tmp_path):
+    path = tmp_path / "h.json"
+    path.write_text(
+        json.dumps(
+            {
+                "holdings": [
+                    {
+                        "ticker": "AAPL",
+                        "accounts": [
+                            {
+                                "institution": "fid",
+                                "account_mask": "***4917",
+                                "account_subtype": "individ",
+                                "account_name": "Fidelity Individual TOD",
+                                "ending_value": 400.0,
+                                "quantity": 2,
+                                "period_end": "2026-02-28",
+                            }
+                        ],
+                    },
+                    {
+                        "ticker": "VTI",
+                        "accounts": [
+                            {
+                                "institution": "fid",
+                                "account_mask": "***4917",
+                                "account_subtype": "individ",
+                                "ending_value": 600.0,
+                                "quantity": 3,
+                                "period_end": "2026-02-28",
+                            },
+                            {
+                                "institution": "fid",
+                                "account_mask": "***7866",
+                                "account_subtype": "hsa",
+                                "ending_value": 9.0,
+                                "quantity": 1,
+                                "period_end": "2026-02-28",
+                            },
+                        ],
+                    },
+                ]
+            }
+        )
+    )
+    got = a.statement_accounts(path)
+    by = {x["key"]: x for x in got["accounts"]}
+    assert set(by) == {"4917:individ", "7866:hsa"}
+    one = by["4917:individ"]
+    assert (
+        one["broker"] == "fidelity"
+        and one["label"] == "Fidelity …4917"
+        and one["total_value"] == 1000.0
+    )
+    assert (
+        one["holdings"]["VTI"] == {"quantity": 3.0, "market_value": 600.0}
+        and one["as_of"] == "2026-02-28"
+    )
