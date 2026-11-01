@@ -659,3 +659,23 @@ def test_schwab_validation_text_is_read_from_activity_message():
     assert t.SchwabTrader("tok", warn).preview(t.Order("AAPL", "buy", "limit", 1.0, 100.0, "1234"))[
         "warnings"
     ] == ["extended hours risk", "old style"]
+
+
+def test_the_impact_also_counts_institutions_read_from_statements_such_as_fidelity(rig):
+    trader, *_ = rig
+    trader.accounts_loader = lambda: ACCOUNTS
+    trader.statements_loader = lambda: {
+        "institutions": {"fid": {"name": "Fidelity", "total": 20000.0, "as_of": "2026-02-28"}},
+        "holdings": {"AAPL": {"quantity": 4.0, "market_value": 400.0}},
+    }
+    imp = trader.preview(order(quantity=2, price=100))["impact"]
+    ev = imp["everything"]
+    assert ev["value"] == {
+        "before": 1900.0,
+        "after": 2100.0,
+    }  # both Schwab accounts' AAPL plus Fidelity's
+    assert ev["total"] == 100000 + 20000 and ev["institutions"][0]["as_of"] == "2026-02-28"
+    assert ev["percent"]["after"] == pytest.approx(2100 / 120000 * 100)
+    assert imp["overall"]["total"] == 100000  # the live-only figure is unchanged
+    trader.statements_loader = lambda: {}
+    assert trader.preview(order(quantity=2, price=100))["impact"]["everything"] is None

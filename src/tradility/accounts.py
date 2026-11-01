@@ -158,6 +158,50 @@ def fetch_binance(key: str, secret: str, get: GetJson, clock=None) -> list[dict[
     return [binance_account(account, prices)] if isinstance(account, dict) else []
 
 
+LIVE_INSTITUTIONS = {
+    "cs",
+    "bin",
+}  # Schwab and Binance.US are read live; the rest come from statements
+INSTITUTION_NAMES = {
+    "fid": "Fidelity",
+    "ej": "Edward Jones",
+    "wb": "Webull",
+    "cs": "Schwab",
+    "bin": "Binance.US",
+}
+
+
+def statement_accounts(path: Any) -> dict[str, Any]:
+    """Holdings at institutions that are not read live (Fidelity and the like), from the finance
+    pipeline's holdings export. Their values are as of each statement date, which can be old."""
+    import json
+    from pathlib import Path
+
+    try:
+        payload = json.loads(Path(str(path)).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    institutions: dict[str, dict[str, Any]] = {}
+    holdings: dict[str, dict[str, float]] = {}
+    for holding in payload.get("holdings", []) if isinstance(payload, dict) else []:
+        symbol = str(holding.get("ticker", "")).upper()
+        for acct in holding.get("accounts") or []:
+            code = str(acct.get("institution", ""))
+            if code in LIVE_INSTITUTIONS or not code:
+                continue
+            value = _num(acct.get("ending_value")) or 0.0
+            row = institutions.setdefault(
+                code, {"name": INSTITUTION_NAMES.get(code, code.upper()), "total": 0.0, "as_of": ""}
+            )
+            row["total"] += value
+            row["as_of"] = max(row["as_of"], str(acct.get("period_end", "")))
+            if symbol:
+                slot = holdings.setdefault(symbol, {"quantity": 0.0, "market_value": 0.0})
+                slot["quantity"] += _num(acct.get("quantity")) or 0.0
+                slot["market_value"] += value
+    return {"institutions": institutions, "holdings": holdings} if institutions else {}
+
+
 def collect(get: GetJson = http_get_json, env: dict[str, str] | None = None) -> dict[str, Any]:
     """Every account from each configured broker; a failing source is named by class only."""
     env = os.environ if env is None else env

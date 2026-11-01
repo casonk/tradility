@@ -37,6 +37,7 @@ class Service:
         self.account_loader = accounts_module.collect
         self._accounts: tuple[float, dict[str, Any]] | None = None
         self.trader.accounts_loader = self._cached_accounts
+        self.trader.statements_loader = self._statements
         self.transfer_loader = transfers_module.collect
         self._transfers: tuple[float, dict[str, Any]] | None = None
 
@@ -55,11 +56,20 @@ class Service:
             self._accounts = (now, self.account_loader())
         return self._accounts[1]
 
+    def _statements(self) -> dict[str, Any]:
+        """Holdings at institutions read from statements, from the holdings export (if one is set)."""
+        import os
+
+        path = os.environ.get("TRADILITY_HOLDINGS_FILE", "")
+        return accounts_module.statement_accounts(path) if path else {}
+
     def accounts(self) -> dict[str, Any]:
         """Read-only account details for the page (holdings are only used to size an order)."""
         data = self._cached_accounts()
+        other = self._statements()
         return {
             **data,
+            "statements": list((other.get("institutions") or {}).values()),
             "accounts": [
                 {k: v for k, v in a.items() if k != "holdings"} for a in data.get("accounts", [])
             ],
