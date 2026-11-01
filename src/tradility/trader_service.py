@@ -85,7 +85,8 @@ class Service:
             },
             "defaults": {
                 "kind": "limit",
-                "time_in_force": "gtc",
+                "time_in_force": policy.default_tif,
+                "session": policy.default_session,
                 "buy_offset_pct": policy.buy_offset_pct,
                 "sell_offset_pct": policy.sell_offset_pct,
             },
