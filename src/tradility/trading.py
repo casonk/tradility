@@ -99,6 +99,8 @@ class Policy:
     sell_offset_pct: float = 2.5
     default_session: str = "normal"  # what the order form starts with: "normal" or "extended"
     default_tif: str = "gtc"  # "gtc" or "day"
+    # One-click order shapes: (name, side, offset_pct from the mark, tif or "", session or "")
+    templates: tuple[tuple[str, str, float, str, str], ...] | None = None  # None: the built-in set
     # Withdrawals are off unless this section turns them on, and only go to listed addresses.
     withdrawals_enabled: bool = False
     withdraw_per_usd: float = 0.0
@@ -112,6 +114,48 @@ class Policy:
 
     def allows(self, ticker: str) -> bool:
         return "*" in self.tickers or ticker in self.tickers
+
+
+DEFAULT_TEMPLATES = tuple(
+    (
+        f"{'Buy' if side == 'buy' else 'Sell'} {pct}% {'under' if side == 'buy' else 'over'}",
+        side,
+        sign * pct,
+        "",
+        "",
+    )
+    for side, sign in (("buy", -1), ("sell", 1))
+    for pct in (1, 2, 4, 8)
+)
+
+
+def _templates(raw: Any) -> tuple[tuple[str, str, float, str, str], ...] | None:
+    """The policy's ``[[templates]]``; None when absent, which means the built-in 1/2/4/8% set."""
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or len(raw) > 24:
+        raise TradingError("trading policy templates: a list of at most 24")
+    out = []
+    for item in raw:
+        name = str(item["name"]).strip()
+        side = str(item["side"]).lower()
+        offset = float(item["offset_pct"])
+        tif = str(item.get("tif", "")).lower()
+        session = str(item.get("session", "")).lower()
+        if (
+            not name
+            or len(name) > 32
+            or side not in SIDES
+            or not math.isfinite(offset)
+            or abs(offset) > 50
+        ):
+            raise TradingError(
+                "trading policy template needs a name, a side and an offset within 50%"
+            )
+        if (tif and tif not in TIFS) or (session and session not in SESSIONS):
+            raise TradingError("trading policy template has an unknown duration or session")
+        out.append((name, side, offset, tif, session))
+    return tuple(out)
 
 
 def load_policy(path: Path | None = None) -> Policy:
@@ -142,6 +186,7 @@ def load_policy(path: Path | None = None) -> Policy:
             sell_offset_pct=float((raw.get("defaults") or {}).get("sell_offset_pct", 2.5)),
             default_session=str((raw.get("defaults") or {}).get("session", "normal")).lower(),
             default_tif=str((raw.get("defaults") or {}).get("time_in_force", "gtc")).lower(),
+            templates=_templates(raw.get("templates")),
             withdrawals_enabled=(raw.get("withdrawals") or {}).get("enabled") is True,
             withdraw_per_usd=float((raw.get("withdrawals") or {}).get("per_withdrawal_usd", 0)),
             withdraw_daily_usd=float((raw.get("withdrawals") or {}).get("daily_withdrawal_usd", 0)),
@@ -155,7 +200,7 @@ def load_policy(path: Path | None = None) -> Policy:
                 for a in (raw.get("withdrawals") or {}).get("addresses", [])
             ),
         )
-    except (TypeError, ValueError, KeyError) as exc:
+    except (TypeError, ValueError, KeyError, AttributeError) as exc:
         raise TradingError("trading policy has a bad value") from exc
     if policy.default_session not in SESSIONS or policy.default_tif not in TIFS:
         raise TradingError(
@@ -642,6 +687,19 @@ class Trader:
             "mark": mark,
             "buy_price": default(self.policy.buy_offset_pct),
             "sell_price": default(self.policy.sell_offset_pct),
+            "templates": [
+                {
+                    "name": name,
+                    "side": side,
+                    "offset_pct": offset,
+                    "price": default(offset),
+                    **({"tif": tif} if tif else {}),
+                    **({"session": session} if session else {}),
+                }
+                for name, side, offset, tif, session in (
+                    DEFAULT_TEMPLATES if self.policy.templates is None else self.policy.templates
+                )
+            ],
         }
 
     def _limits(self, order: Order, last: float) -> float:
