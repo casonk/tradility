@@ -88,9 +88,18 @@ def schwab_holdings(positions: list[Any]) -> dict[str, dict[str, float]]:
         if not symbol or value is None:
             continue
         qty = (_num(position.get("longQuantity")) or 0) - (_num(position.get("shortQuantity")) or 0)
-        row = out.setdefault(symbol, {"quantity": 0.0, "market_value": 0.0})
+        row = out.setdefault(symbol, {"quantity": 0.0, "market_value": 0.0, "cost": 0.0})
         row["quantity"] += qty
         row["market_value"] += value
+        # Schwab's own average price for the position: what the shares in this account cost on average
+        average = _num(position.get("averagePrice"))
+        if average is None:
+            average = _num(position.get("averageLongPrice"))
+        if average is not None and qty > 0:
+            row["cost"] += average * qty
+    for row in out.values():
+        cost = row.pop("cost")
+        row["average_price"] = cost / row["quantity"] if row["quantity"] > 0 and cost > 0 else None
     return out
 
 
