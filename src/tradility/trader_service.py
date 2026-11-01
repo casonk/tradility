@@ -128,6 +128,11 @@ class Service:
         try:
             if method == "GET" and path == "/status":
                 return HTTPStatus.OK, {"ok": True, **self.status()}
+            if method == "GET" and path.startswith("/holdings/"):
+                return HTTPStatus.OK, {
+                    "ok": True,
+                    **self.trader.holdings_for(path[len("/holdings/") :]),
+                }
             if method == "GET" and path == "/transfers":
                 return HTTPStatus.OK, {"ok": True, **self.transfers()}
             if method == "GET" and path == "/accounts":

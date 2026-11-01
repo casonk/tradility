@@ -518,8 +518,9 @@ ACCOUNTS = {
             "id": "1234",
             "label": "Schwab …1234",
             "total_value": 10000.0,
-            "cash_available_to_trade": 2000.0,
-            "buying_power": 4000.0,
+            "cash": 2000.0,
+            "spendable": 4000.0,
+            "buying_power": 4500.0,
             "holdings": {"AAPL": {"quantity": 5.0, "market_value": 500.0}},
         },
         {
@@ -527,7 +528,8 @@ ACCOUNTS = {
             "id": "77",
             "label": "Schwab …77",
             "total_value": 30000.0,
-            "cash_available_to_trade": 500.0,
+            "cash": 500.0,
+            "spendable": 500.0,
             "buying_power": 500.0,
             "holdings": {"AAPL": {"quantity": 10.0, "market_value": 1000.0}},
         },
@@ -536,7 +538,8 @@ ACCOUNTS = {
             "id": "binance",
             "label": "Binance.US spot",
             "total_value": 60000.0,
-            "cash_available_to_trade": 100.0,
+            "cash": 100.0,
+            "spendable": 100.0,
             "buying_power": 100.0,
             "holdings": {"BTC-USD": {"quantity": 1.0, "market_value": 50000.0}},
         },
@@ -679,3 +682,55 @@ def test_the_impact_also_counts_institutions_read_from_statements_such_as_fideli
     assert imp["overall"]["total"] == 100000  # the live-only figure is unchanged
     trader.statements_loader = lambda: {}
     assert trader.preview(order(quantity=2, price=100))["impact"]["everything"] is None
+
+
+def test_the_preview_lists_the_symbol_in_every_account_with_the_chosen_one_before_and_after(rig):
+    trader, *_ = rig
+    trader.accounts_loader = lambda: ACCOUNTS
+    rows = trader.preview(order(quantity=2, price=100))["impact"]["holdings"]
+    by = {r["id"]: r for r in rows}
+    assert (
+        by["1234"]["quantity"] == 5.0
+        and by["1234"]["quantity_after"] == 7.0
+        and by["1234"]["chosen"] is True
+    )
+    assert by["1234"]["value_after"] == 700.0 and by["1234"]["percent"] == pytest.approx(5.0)
+    assert by["77"]["quantity"] == 10.0 and "chosen" not in by["77"]  # other accounts are unchanged
+    assert by["binance"]["quantity"] == 0.0
+
+
+def test_holdings_for_a_ticker_lists_each_account_and_the_statement_institutions(rig):
+    trader, *_ = rig
+    trader.accounts_loader = lambda: ACCOUNTS
+    trader.statements_loader = lambda: {
+        "institutions": {"fid": {"name": "Fidelity", "total": 9.0, "as_of": "2026-02-28"}},
+        "holdings": {"AAPL": {"quantity": 4.0, "market_value": 400.0}},
+    }
+    got = trader.holdings_for("aapl")
+    assert [(r["id"], r["quantity"]) for r in got["accounts"]] == [
+        ("1234", 5.0),
+        ("77", 10.0),
+        ("binance", 0.0),
+    ]
+    assert got["statements"] == [
+        {"name": "Fidelity", "as_of": "2026-02-28", "quantity": 4.0, "market_value": 400.0}
+    ]
+    assert trader.holdings_for("MSFT")["statements"] == []
+    with pytest.raises(t.TradingError):
+        trader.holdings_for("not a ticker!")
+
+
+def test_the_service_serves_holdings_per_ticker_behind_the_same_gate(tmp_path):
+    from tradility import trader_service as ts
+
+    svc = ts.Service(lambda: POLICY, t.Audit(tmp_path / "a.jsonl"), send=Fake())
+    svc.account_loader = lambda: ACCOUNTS
+    good = {"Host": "127.0.0.1:8768", "X-Tradility-Trader": "1"}
+    code, body = svc.handle("GET", "/holdings/AAPL", good, b"")
+    assert code == 200 and body["symbol"] == "AAPL" and len(body["accounts"]) == 3
+    assert (
+        svc.handle(
+            "GET", "/holdings/AAPL", {"Host": "evil.example", "X-Tradility-Trader": "1"}, b""
+        )[0]
+        == 403
+    )

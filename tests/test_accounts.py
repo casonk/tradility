@@ -12,7 +12,8 @@ SCHWAB = {
         "isDayTrader": False,
         "isClosingOnlyRestricted": False,
         "positions": [{}, {}, {}],
-        "initialBalances": {"cashAvailableForTrading": 1500.5, "maintenanceCall": 0},
+        # Schwab reports 0.0 here outside the start of the day; it must never become "available to trade"
+        "initialBalances": {"cashAvailableForTrading": 0.0, "maintenanceCall": 0},
         "currentBalances": {
             "liquidationValue": 25000.0,
             "cashBalance": 1800.25,
@@ -25,7 +26,7 @@ SCHWAB = {
             "maintenanceCall": 0.0,
             "regTCall": 0.0,
         },
-        "projectedBalances": {"isInCall": False},
+        "projectedBalances": {"isInCall": False, "stockBuyingPower": 38000.0},
     }
 }
 
@@ -42,7 +43,10 @@ def test_a_schwab_account_is_flattened_with_only_the_last_four_digits():
         40000.0,
         20000.0,
     )
-    assert got["cash_available_to_trade"] == 1500.5 and got["day_trading_buying_power"] == 80000.0
+    assert (
+        got["spendable"] == 38000.0 and got["day_trading_buying_power"] == 80000.0
+    )  # projected stock buying power
+    assert "cash_available_to_trade" not in got
     assert got["positions"] == 3 and got["in_call"] is False and got["day_trader"] is False
 
 
@@ -232,3 +236,9 @@ def test_statement_institutions_are_read_from_the_holdings_export_and_live_ones_
         assert svc.handle("GET", "/accounts", good, b"")[1]["statements"][0]["name"] == "Fidelity"
     finally:
         del os.environ["TRADILITY_HOLDINGS_FILE"]
+
+
+def test_spendable_falls_back_to_the_current_buying_power_and_is_never_the_initial_zero():
+    bare = json.loads(json.dumps(SCHWAB))
+    del bare["securitiesAccount"]["projectedBalances"]["stockBuyingPower"]
+    assert a.schwab_account(bare)["spendable"] == 40000.0
