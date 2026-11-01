@@ -27,7 +27,7 @@ IDLE_SECONDS = 600
 def labels_override() -> dict[str, str]:
     import os
 
-    import tomllib
+    from tradility._compat import tomllib
 
     base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
     path = Path(
