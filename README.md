@@ -7,6 +7,12 @@ explicit **yfinance** fallback, and computes short- and long-horizon indicator
 signals for every ticker in your portfolio or a custom list. Outputs a
 structured JSON file suitable for dashboards and further analysis.
 
+The same artifact can include cached qualitative profiles—canonical company or
+fund name, description, sector, industry/category, headquarters, website,
+exchange, employee count, provider provenance, and retrieval time. Tradility
+does not synthesize a mission or vision statement; that field remains empty
+unless a future source supplies an explicitly company-authored statement.
+
 ## Prerequisites
 
 - Python 3.10+
@@ -97,6 +103,23 @@ package. Use `--source schwab` to fail closed when Schwab is unavailable, or
         "vwap_momentum": 1,
         "rsi_reversion": -1
       },
+      "company_profile": {
+        "available": true,
+        "canonical_name": "Apple Inc.",
+        "description": "Apple Inc. designs, manufactures, and markets ...",
+        "sector": "Technology",
+        "industry": "Consumer Electronics",
+        "category": "",
+        "fund_family": "",
+        "headquarters": "Cupertino, CA, United States",
+        "website": "https://www.apple.com",
+        "exchange": "NasdaqGS",
+        "employees": 150000,
+        "entity_type": "equity",
+        "vision_statement": null,
+        "source": "yfinance/yahoo-finance",
+        "retrieved_at": "2026-11-01T00:00:00Z"
+      },
       "price_history": [
         {"date": "2021-06-18", "close": 130.46},
         {"date": "2026-06-15", "close": 313.62}
@@ -147,6 +170,21 @@ the rolling 20-day VWAP contributes ±1 as momentum, and oversold/overbought RSI
 contributes ±1 as a mean-reversion signal. The component values are serialized
 in `technical_components` so consumers can explain the label.
 
+### Qualitative profiles
+
+The CLI enables qualitative profiles by default and stores normalized public
+metadata in `tradility-profile-cache.json` beside the analysis output. Fresh
+entries are reused for 30 days, so the daily price refresh does not repeatedly
+request slow-changing company metadata. Use `--profile-cache`,
+`--profile-max-age-days`, and `--profile-workers` to tune that behavior, or
+`--skip-profiles` for a price-only run. Yahoo Finance is identified separately
+as the profile source even when Schwab supplies the price history.
+
+Profiles can be incomplete for funds, crypto, unsupported symbols, and non-US
+instruments. `vision_statement` is deliberately `null`: Yahoo's general-info
+contract does not provide a reliable company-authored mission/vision field, so
+Tradility will not relabel or generate one from the business description.
+
 ## Scheduled refresh
 
 `scripts/run_scheduled_analysis.sh` is the non-interactive workload entry point.
@@ -157,6 +195,9 @@ It requires `TRADILITY_HOLDINGS_FILE` and accepts:
 - `TRADILITY_MARKET_SOURCE` (default: `auto`)
 - `TRADILITY_PYTHON` (default: `.venv/bin/python`)
 - `TRADILITY_SCHWAB_TOKEN_COMMAND` (optional credential-pipeline helper)
+- `TRADILITY_PROFILE_CACHE` (default: `exports/tradility-profile-cache.json`)
+- `TRADILITY_PROFILE_MAX_AGE_DAYS` (default: `30`)
+- `TRADILITY_PROFILE_WORKERS` (default: `4`)
 
 Clockwork owns the corresponding user-level systemd schedule. The wrapper uses
 an output lock so a manual refresh cannot overlap the scheduled run.

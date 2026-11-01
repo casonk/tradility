@@ -11,6 +11,7 @@ import pandas as pd
 
 from tradility.fetch import OHLCVResult, fetch_ohlcv, normalize_history_period
 from tradility.indicators import long_term_trend_signal, rsi, rsi_signal, sma, vwap, vwap_signal
+from tradility.profiles import load_company_profiles
 
 RSI_PERIOD = 14
 VWAP_PERIOD = 20
@@ -99,13 +100,22 @@ def _technical_rating(
     return rating, score, components
 
 
-def _ticker_record(ticker: str, result: OHLCVResult, meta: dict[str, str]) -> dict[str, Any]:
+def _ticker_record(
+    ticker: str,
+    result: OHLCVResult,
+    meta: dict[str, str],
+    profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     base: dict[str, Any] = {
         "ticker": ticker,
         "name": meta.get("name", ""),
         "asset_class": meta.get("asset_class", ""),
         "data_source": result.source or "unknown",
     }
+    if profile:
+        base["company_profile"] = profile
+        if not base["name"] and profile.get("canonical_name"):
+            base["name"] = profile["canonical_name"]
 
     if not result.ok:
         base["fetch_status"] = "error"
@@ -219,6 +229,10 @@ def analyze_tickers(
     source: str = "auto",
     schwab_access_token: str = "",
     schwab_token_command: str = "",
+    include_profiles: bool = False,
+    profile_cache_path: Path | None = None,
+    profile_max_age_days: int = 30,
+    profile_workers: int = 4,
 ) -> dict[str, Any]:
     """Run full analysis pipeline.
 
@@ -250,10 +264,37 @@ def analyze_tickers(
         schwab_token_command=schwab_token_command,
     )
 
+    profiles: dict[str, dict[str, Any]] = {}
+    profile_summary: dict[str, Any] = {"enabled": False}
+    if include_profiles:
+        if profile_cache_path is None:
+            raise ValueError("profile_cache_path is required when profiles are enabled")
+        profile_tickers = [
+            ticker
+            for ticker, meta in meta_by_ticker.items()
+            if str(meta.get("asset_class", "")).strip().lower() not in {"cash", "crypto"}
+        ]
+        profile_result = load_company_profiles(
+            profile_tickers,
+            cache_path=profile_cache_path,
+            max_age_days=profile_max_age_days,
+            workers=profile_workers,
+        )
+        profiles = profile_result.profiles
+        profile_summary = {
+            "enabled": True,
+            "source": "yfinance/yahoo-finance",
+            "max_age_days": profile_max_age_days,
+            "requested": profile_result.requested,
+            "cache_hits": profile_result.cache_hits,
+            "refreshed": profile_result.refreshed,
+            "errors": profile_result.errors,
+        }
+
     records = []
     for yf_ticker, meta in meta_by_ticker.items():
         result = ohlcv.get(yf_ticker, OHLCVResult(ticker=yf_ticker, error="not fetched"))
-        rec = _ticker_record(yf_ticker, result, meta)
+        rec = _ticker_record(yf_ticker, result, meta, profiles.get(yf_ticker))
         # Restore original ticker label for crypto (strip -USD suffix in output)
         rec["ticker"] = meta.get("original_ticker", yf_ticker) or yf_ticker
         records.append(rec)
@@ -280,5 +321,6 @@ def analyze_tickers(
         "ticker_count": len(records),
         "fetch_ok": ok_count,
         "fetch_errors": err_count,
+        "company_profiles": profile_summary,
         "tickers": records,
     }

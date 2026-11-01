@@ -35,6 +35,10 @@
 
 ## Done
 
+- [x] **Qualitative company profiles** — attach cached, sourced names,
+  descriptions, sector/industry or fund metadata, headquarters, website,
+  exchange, employees, entity type, and freshness; leave official vision empty
+  rather than generating one.
 - [x] **Clickable stock-detail data** — each successful ticker carries a
   chart-ready five-year history, period returns, 52-week range, and transparent
   technical-rating components for the Clockwork detail view.

@@ -7,6 +7,7 @@ import pytest
 
 from tradility import analyze as analyze_module
 from tradility.fetch import OHLCVResult
+from tradility.profiles import ProfileLoadResult
 
 
 def _trend_frame() -> pd.DataFrame:
@@ -64,6 +65,57 @@ def test_chart_history_keeps_recent_daily_points_and_downsamples_older_history()
     assert 400 < len(history) < 550
     recent = [point for point in history if point["date"] >= "2025-01-01"]
     assert len(recent) > 200
+
+
+def test_analysis_attaches_cached_company_profile(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        analyze_module,
+        "fetch_ohlcv",
+        lambda tickers, **_kwargs: {
+            ticker: OHLCVResult(ticker=ticker, df=_trend_frame(), source="schwab")
+            for ticker in tickers
+        },
+    )
+    observed = {}
+
+    def fake_profiles(tickers, **kwargs):
+        observed["tickers"] = list(tickers)
+        observed.update(kwargs)
+        return ProfileLoadResult(
+            profiles={
+                "AAPL": {
+                    "available": True,
+                    "canonical_name": "Apple Inc.",
+                    "description": "Makes consumer technology.",
+                    "source": "yfinance/yahoo-finance",
+                    "retrieved_at": "2026-11-01T00:00:00Z",
+                }
+            },
+            requested=1,
+            cache_hits=1,
+            refreshed=0,
+            errors=0,
+        )
+
+    monkeypatch.setattr(analyze_module, "load_company_profiles", fake_profiles)
+    cache = tmp_path / "profiles.json"
+
+    payload = analyze_module.analyze_tickers(
+        tickers=["AAPL"], include_profiles=True, profile_cache_path=cache
+    )
+
+    assert observed["tickers"] == ["AAPL"]
+    assert observed["cache_path"] == cache
+    assert payload["company_profiles"]["cache_hits"] == 1
+    assert payload["tickers"][0]["name"] == "Apple Inc."
+    assert payload["tickers"][0]["company_profile"]["description"].startswith("Makes")
+
+
+def test_profiles_require_an_explicit_cache_path(monkeypatch):
+    monkeypatch.setattr(analyze_module, "fetch_ohlcv", lambda *_args, **_kwargs: {})
+
+    with pytest.raises(ValueError, match="profile_cache_path"):
+        analyze_module.analyze_tickers(tickers=["AAPL"], include_profiles=True)
 
 
 def test_period_return_accepts_the_first_market_day_after_a_weekend_boundary():
