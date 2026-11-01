@@ -79,11 +79,16 @@ class Policy:
     price_band_pct: float = 0.0
     brokers: tuple[str, ...] = ()
     tickers: frozenset[str] = frozenset()
-    schwab_account: str = ""  # the last digits of the one account that may be traded
+    schwab_accounts: tuple[str, ...] = ()  # last digits of each Schwab account that may be traded
+    buy_offset_pct: float = -2.5  # the order form's default limit price relative to the mark
+    sell_offset_pct: float = 2.5
 
     def check_ticker(self, ticker: str) -> None:
-        if ticker not in self.tickers:
+        if "*" not in self.tickers and ticker not in self.tickers:
             raise TradingError(f"{ticker} is not on the trading allowlist")
+
+    def allows(self, ticker: str) -> bool:
+        return "*" in self.tickers or ticker in self.tickers
 
 
 def load_policy(path: Path | None = None) -> Policy:
@@ -105,10 +110,18 @@ def load_policy(path: Path | None = None) -> Policy:
             price_band_pct=float(raw.get("price_band_pct", 0)),
             brokers=tuple(str(b) for b, on in (raw.get("brokers") or {}).items() if on is True),
             tickers=frozenset(str(t).upper() for t in raw.get("tickers", [])),
-            schwab_account=str((raw.get("schwab") or {}).get("account", "")).strip(),
+            schwab_accounts=tuple(
+                str(a).strip()
+                for a in (raw.get("schwab") or {}).get("accounts", [])
+                if str(a).strip()
+            ),
+            buy_offset_pct=float((raw.get("defaults") or {}).get("buy_offset_pct", -2.5)),
+            sell_offset_pct=float((raw.get("defaults") or {}).get("sell_offset_pct", 2.5)),
         )
     except (TypeError, ValueError) as exc:
         raise TradingError("trading policy has a bad value") from exc
+    if not all(math.isfinite(v) for v in (policy.buy_offset_pct, policy.sell_offset_pct)):
+        raise TradingError("trading policy default offsets must be finite")
     if not all(
         math.isfinite(v) and v >= 0
         for v in (policy.per_order_usd, policy.daily_usd, policy.price_band_pct)
@@ -127,6 +140,7 @@ class Order:
     kind: str
     quantity: float
     price: float | None = None
+    account: str = ""  # a Schwab account's last digits; Binance.US has one account
 
     @property
     def broker(self) -> str:
@@ -162,7 +176,7 @@ def parse_order(raw: Any) -> Order:
             raise TradingError("a limit order needs a price") from exc
         if not math.isfinite(price) or price <= 0:
             raise TradingError("price must be positive")
-    return Order(ticker, side, kind, quantity, price)
+    return Order(ticker, side, kind, quantity, price, str(raw.get("account", "")).strip())
 
 
 # -- audit --------------------------------------------------------------------------------------
@@ -251,40 +265,45 @@ class Placed:
 class SchwabTrader:
     name = "schwab"
 
-    def __init__(self, token: str, account_mask: str, send: Send) -> None:
+    def __init__(self, token: str, send: Send) -> None:
         self.headers = {"Authorization": f"Bearer {token}"}
-        self.mask, self._send, self._hash = account_mask, send, ""
+        self._send, self._hashes = send, {}
 
     def send(self, method: str, url: str, headers: dict[str, str], body: bytes | None):
         """Schwab answers 400 to a GET that declares a JSON body, so only requests with one do."""
         sent = {**headers, "Content-Type": "application/json"} if body is not None else headers
         return self._send(method, url, sent, body)
 
-    def _account_hash(self) -> str:
-        if self._hash:
-            return self._hash
-        if not self.mask:
-            raise TradingError("no Schwab account is set in the trading policy")
+    def _account_hash(self, mask: str) -> str:
+        if mask in self._hashes:
+            return self._hashes[mask]
+        if not mask:
+            raise TradingError("choose which Schwab account to trade in")
         status, _, payload = self.send(
             "GET", f"{SCHWAB_BASE}/trader/v1/accounts/accountNumbers", self.headers, None
         )
         if status != 200 or not isinstance(payload, list):
             raise TradingError(f"Schwab accounts lookup failed (HTTP {status})")
-        matches = [a for a in payload if str(a.get("accountNumber", "")).endswith(self.mask)]
+        matches = [a for a in payload if str(a.get("accountNumber", "")).endswith(mask)]
         if len(matches) != 1:
-            raise TradingError("the policy's Schwab account did not match exactly one account")
-        self._hash = str(matches[0]["hashValue"])
-        return self._hash
+            raise TradingError("that account did not match exactly one Schwab account")
+        self._hashes[mask] = str(matches[0]["hashValue"])
+        return self._hashes[mask]
 
     def last_price(self, ticker: str) -> float:
         query = urlencode({"symbols": ticker, "fields": "quote"})
         status, _, payload = self.send(
             "GET", f"{SCHWAB_BASE}/marketdata/v1/quotes?{query}", self.headers, None
         )
-        try:
-            price = float(payload[ticker]["quote"]["lastPrice"])
-        except (KeyError, TypeError, ValueError):
-            price = 0.0
+        quote = (payload.get(ticker) or {}).get("quote", {}) if isinstance(payload, dict) else {}
+        price = 0.0
+        for field_name in ("mark", "lastPrice"):  # the mark first, then the last trade
+            try:
+                price = float(quote[field_name])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if math.isfinite(price) and price > 0:
+                break
         if status != 200 or not math.isfinite(price) or price <= 0:
             raise TradingError("no current price was available for that ticker")
         return price
@@ -294,7 +313,8 @@ class SchwabTrader:
         payload: dict[str, Any] = {
             "orderType": "MARKET" if order.kind == "market" else "LIMIT",
             "session": "NORMAL",
-            "duration": "DAY",
+            # a limit order rests until filled or cancelled; a market order can only be for the day
+            "duration": "GOOD_TILL_CANCEL" if order.kind == "limit" else "DAY",
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
                 {
@@ -309,7 +329,7 @@ class SchwabTrader:
         return json.dumps(payload).encode()
 
     def preview(self, order: Order) -> dict[str, Any]:
-        url = f"{SCHWAB_BASE}/trader/v1/accounts/{self._account_hash()}/previewOrder"
+        url = f"{SCHWAB_BASE}/trader/v1/accounts/{self._account_hash(order.account)}/previewOrder"
         status, _, payload = self.send("POST", url, self.headers, self.body(order))
         if status not in (200, 201):
             raise TradingError(f"Schwab rejected the preview (HTTP {status})")
@@ -329,7 +349,7 @@ class SchwabTrader:
         return {"warnings": [w for w in warnings if w]}
 
     def place(self, order: Order, client_id: str) -> Placed:
-        url = f"{SCHWAB_BASE}/trader/v1/accounts/{self._account_hash()}/orders"
+        url = f"{SCHWAB_BASE}/trader/v1/accounts/{self._account_hash(order.account)}/orders"
         status, headers, payload = self.send("POST", url, self.headers, self.body(order))
         if status not in (200, 201):
             raise TradingError(
@@ -338,10 +358,10 @@ class SchwabTrader:
         location = next((v for k, v in headers.items() if k.lower() == "location"), "")
         return Placed(location.rstrip("/").rsplit("/", 1)[-1] or "unknown")
 
-    def cancel(self, order_id: str) -> None:
+    def cancel(self, order_id: str, account: str = "") -> None:
         if not re.fullmatch(r"\d{1,20}", order_id):
             raise TradingError("that is not a Schwab order id")
-        url = f"{SCHWAB_BASE}/trader/v1/accounts/{self._account_hash()}/orders/{order_id}"
+        url = f"{SCHWAB_BASE}/trader/v1/accounts/{self._account_hash(account)}/orders/{order_id}"
         status, _, payload = self.send("DELETE", url, self.headers, None)
         if status not in (200, 201, 204):
             raise TradingError(
@@ -453,7 +473,29 @@ class Trader:
         if order.broker not in self.policy.brokers or order.broker not in self.brokers:
             raise TradingError(f"{order.broker} is not enabled for trading")
         self.policy.check_ticker(order.ticker)
+        if order.broker == "schwab" and order.account not in self.policy.schwab_accounts:
+            raise TradingError("choose one of the Schwab accounts the policy allows")
         return self.brokers[order.broker]()
+
+    def quote(self, ticker: str) -> dict[str, Any]:
+        """The current mark and the default limit prices for a buy and a sell (read-only)."""
+        ticker = str(ticker).strip().upper()
+        if not TICKER.fullmatch(ticker):
+            raise TradingError("a ticker is required")
+        if not self.policy.enabled:
+            raise TradingError("trading is turned off in the policy")
+        self.policy.check_ticker(ticker)
+        name = "binance" if ticker.endswith("-USD") else "schwab"
+        if name not in self.policy.brokers or name not in self.brokers:
+            raise TradingError(f"{name} is not enabled for trading")
+        mark = self.brokers[name]().last_price(ticker)
+        places = 2 if mark >= 1 else 6
+        return {
+            "ticker": ticker,
+            "mark": mark,
+            "buy_price": round(mark * (1 + self.policy.buy_offset_pct / 100), places),
+            "sell_price": round(mark * (1 + self.policy.sell_offset_pct / 100), places),
+        }
 
     def _limits(self, order: Order, last: float) -> float:
         """Check the dollar caps and price band; returns the notional."""
@@ -556,7 +598,7 @@ class Trader:
         }
 
     def cancel(
-        self, broker_name: str, order_id: str, phrase: str, symbol: str = ""
+        self, broker_name: str, order_id: str, phrase: str, symbol: str = "", account: str = ""
     ) -> dict[str, Any]:
         if str(phrase).strip() != f"CANCEL {order_id}":
             raise TradingError(f'type exactly "CANCEL {order_id}" to confirm')
@@ -566,10 +608,15 @@ class Trader:
             or broker_name not in self.brokers
         ):
             raise TradingError(f"{broker_name} is not enabled for trading")
+        if broker_name == "schwab" and account not in self.policy.schwab_accounts:
+            raise TradingError("choose one of the Schwab accounts the policy allows")
         broker = self.brokers[broker_name]()
         self.audit.write("cancelling", broker=broker_name, broker_order_id=order_id)
         try:
-            broker.cancel(order_id, symbol) if broker_name == "binance" else broker.cancel(order_id)
+            if broker_name == "binance":
+                broker.cancel(order_id, symbol)
+            else:
+                broker.cancel(order_id, account)
         except TradingError as exc:
             self.audit.write(
                 "cancel_failed", broker=broker_name, broker_order_id=order_id, error=str(exc)[:300]
@@ -580,13 +627,16 @@ class Trader:
 
 
 def _describe(order: Order) -> dict[str, Any]:
-    return {
+    described: dict[str, Any] = {
         "ticker": order.ticker,
         "side": order.side,
         "kind": order.kind,
         "quantity": order.quantity,
         "price": order.price,
     }
+    if order.account:
+        described["account"] = order.account
+    return described
 
 
 def build_brokers(
@@ -602,7 +652,7 @@ def build_brokers(
         )
         if token.error:
             raise TradingError(token.error)
-        return SchwabTrader(token.token, policy.schwab_account, send)
+        return SchwabTrader(token.token, send)
 
     def binance() -> BinanceTrader:
         command = env.get("TRADILITY_BINANCE_TRADE_CREDENTIAL_COMMAND", "").strip()

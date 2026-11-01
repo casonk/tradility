@@ -8,11 +8,17 @@ daily_usd = 500            # reject an order that would push the day's total abo
 price_band_pct = 3         # reject a limit price more than this far from the last price
 
 # Only tickers listed here can be traded; BTC-USD style names route to Binance.US, the rest to Schwab.
+# tickers = ["*"] allows any ticker (the dollar caps and price band still apply).
 tickers = ["AAPL", "BTC-USD"]
+
+# The order form starts as a good-till-cancelled limit order this far from the current mark.
+[defaults]
+buy_offset_pct = -2.5
+sell_offset_pct = 2.5
 
 [brokers]
 schwab = true
 binance = true
 
 [schwab]
-account = "1234"           # the last digits of the one Schwab account that may be traded
+accounts = ["1234", "5678"]   # the last digits of each Schwab account that may be traded; each order names one
