@@ -362,3 +362,58 @@ def test_binance_quotes_defaults_on_the_tick_and_refuses_orders_the_exchange_wou
     assert not placements(send)
     ok = trader.preview(order(ticker="BTC-USD", account="", quantity=0.01, price=50000))
     assert ok["broker"] == "binance"
+
+
+def body_of(send):
+    return json.loads(placements(send)[-1][2])
+
+
+def test_extended_hours_and_the_duration_are_chosen_per_order_and_sent_to_schwab(rig):
+    trader, send, audit, _ = rig
+    for extra, session, duration in (
+        ({"session": "extended", "tif": "gtc"}, "SEAMLESS", "GOOD_TILL_CANCEL"),
+        ({"session": "extended", "tif": "day"}, "SEAMLESS", "DAY"),
+        ({"session": "normal", "tif": "gtc"}, "NORMAL", "GOOD_TILL_CANCEL"),
+        ({"session": "normal", "tif": "day"}, "NORMAL", "DAY"),
+    ):
+        pv = trader.preview(order(quantity=1, **extra))  # $100 each, well inside the daily cap
+        assert pv["order"]["session"] == extra["session"] and pv["order"]["tif"] == extra["tif"]
+        trader.confirm(pv["preview_id"], "BUY AAPL")
+        sent = body_of(send)
+        assert (sent["session"], sent["duration"]) == (session, duration)
+    assert '"session": "extended"' in audit.path.read_text()
+
+
+def test_the_policy_defaults_fill_in_what_the_request_leaves_out(tmp_path):
+    send = Fake()
+    policy = t.Policy(**{**POLICY.__dict__, "default_session": "extended", "default_tif": "gtc"})
+    trader = t.Trader(
+        policy, {"schwab": lambda: t.SchwabTrader("tok", send)}, t.Audit(tmp_path / "a.jsonl")
+    )
+    pv = trader.preview(order())  # no session or tif given
+    assert (pv["order"]["session"], pv["order"]["tif"]) == ("extended", "gtc")
+    trader.confirm(pv["preview_id"], "BUY AAPL")
+    assert body_of(send)["session"] == "SEAMLESS"
+    pv = trader.preview(order(session="normal"))  # an explicit choice wins
+    assert pv["order"]["session"] == "normal"
+
+
+def test_a_market_order_cannot_use_extended_hours_and_bad_values_are_refused(rig):
+    trader, *_ = rig
+    with pytest.raises(t.TradingError, match="market order cannot be placed in extended hours"):
+        trader.preview(order(kind="market", price=None, session="extended"))
+    with pytest.raises(t.TradingError, match="hours must be"):
+        trader.preview(order(session="overnight"))
+    with pytest.raises(t.TradingError, match="duration must be"):
+        trader.preview(order(tif="forever"))
+
+
+def test_the_policy_reads_and_checks_the_default_hours_and_duration(tmp_path):
+    path = tmp_path / "p.toml"
+    path.write_text('enabled = true\n[defaults]\nsession = "extended"\ntime_in_force = "day"\n')
+    os.chmod(path, 0o600)
+    policy = t.load_policy(path)
+    assert (policy.default_session, policy.default_tif) == ("extended", "day")
+    path.write_text('[defaults]\nsession = "moon"\n')
+    with pytest.raises(t.TradingError, match="session is normal or extended"):
+        t.load_policy(path)

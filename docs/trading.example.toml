@@ -15,6 +15,8 @@ tickers = ["AAPL", "BTC-USD"]
 [defaults]
 buy_offset_pct = -2.5
 sell_offset_pct = 2.5
+session = "extended"        # "normal" (regular hours) or "extended" (pre-market + after hours, Schwab SEAMLESS)
+time_in_force = "gtc"       # "gtc" (good till cancelled) or "day"; extended hours need a limit order
 
 [brokers]
 schwab = true

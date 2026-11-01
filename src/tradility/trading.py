@@ -48,6 +48,8 @@ from tradility.sources.schwab import resolve_access_token
 
 SIDES = ("buy", "sell")
 KINDS = ("market", "limit")
+SESSIONS = ("normal", "extended")
+TIFS = ("gtc", "day")
 TICKER = re.compile(r"[A-Z0-9][A-Z0-9.^=-]{0,19}")
 PREVIEW_TTL_SECONDS = 120
 MAX_PREVIEWS = 50
@@ -83,6 +85,8 @@ class Policy:
     schwab_accounts: tuple[str, ...] = ()  # last digits of each Schwab account that may be traded
     buy_offset_pct: float = -2.5  # the order form's default limit price relative to the mark
     sell_offset_pct: float = 2.5
+    default_session: str = "normal"  # what the order form starts with: "normal" or "extended"
+    default_tif: str = "gtc"  # "gtc" or "day"
     # Withdrawals are off unless this section turns them on, and only go to listed addresses.
     withdrawals_enabled: bool = False
     withdraw_per_usd: float = 0.0
@@ -124,6 +128,8 @@ def load_policy(path: Path | None = None) -> Policy:
             ),
             buy_offset_pct=float((raw.get("defaults") or {}).get("buy_offset_pct", -2.5)),
             sell_offset_pct=float((raw.get("defaults") or {}).get("sell_offset_pct", 2.5)),
+            default_session=str((raw.get("defaults") or {}).get("session", "normal")).lower(),
+            default_tif=str((raw.get("defaults") or {}).get("time_in_force", "gtc")).lower(),
             withdrawals_enabled=(raw.get("withdrawals") or {}).get("enabled") is True,
             withdraw_per_usd=float((raw.get("withdrawals") or {}).get("per_withdrawal_usd", 0)),
             withdraw_daily_usd=float((raw.get("withdrawals") or {}).get("daily_withdrawal_usd", 0)),
@@ -139,6 +145,10 @@ def load_policy(path: Path | None = None) -> Policy:
         )
     except (TypeError, ValueError, KeyError) as exc:
         raise TradingError("trading policy has a bad value") from exc
+    if policy.default_session not in SESSIONS or policy.default_tif not in TIFS:
+        raise TradingError(
+            "trading policy defaults: session is normal or extended, time_in_force is gtc or day"
+        )
     if not all(
         math.isfinite(v) and v >= 0 for v in (policy.withdraw_per_usd, policy.withdraw_daily_usd)
     ):
@@ -164,6 +174,8 @@ class Order:
     quantity: float
     price: float | None = None
     account: str = ""  # a Schwab account's last digits; Binance.US has one account
+    session: str = "normal"  # "extended" also trades pre-market and after hours (Schwab SEAMLESS)
+    tif: str = "gtc"  # "gtc" rests until filled or cancelled; "day" expires at the close
 
     @property
     def broker(self) -> str:
@@ -199,7 +211,17 @@ def parse_order(raw: Any) -> Order:
             raise TradingError("a limit order needs a price") from exc
         if not math.isfinite(price) or price <= 0:
             raise TradingError("price must be positive")
-    return Order(ticker, side, kind, quantity, price, str(raw.get("account", "")).strip())
+    session = str(raw.get("session", "normal")).strip().lower()
+    tif = str(raw.get("tif", "gtc")).strip().lower()
+    if session not in SESSIONS:
+        raise TradingError("hours must be regular or extended")
+    if tif not in TIFS:
+        raise TradingError("duration must be gtc or day")
+    if kind == "market" and session == "extended":
+        raise TradingError("a market order cannot be placed in extended hours; use a limit order")
+    return Order(
+        ticker, side, kind, quantity, price, str(raw.get("account", "")).strip(), session, tif
+    )
 
 
 # -- audit --------------------------------------------------------------------------------------
@@ -335,9 +357,12 @@ class SchwabTrader:
     def body(order: Order) -> bytes:
         payload: dict[str, Any] = {
             "orderType": "MARKET" if order.kind == "market" else "LIMIT",
-            "session": "NORMAL",
-            # a limit order rests until filled or cancelled; a market order can only be for the day
-            "duration": "GOOD_TILL_CANCEL" if order.kind == "limit" else "DAY",
+            # SEAMLESS is Schwab's extended session: pre-market, regular and after-hours in one order
+            "session": "SEAMLESS" if order.session == "extended" else "NORMAL",
+            # a market order can only be for the day
+            "duration": (
+                "GOOD_TILL_CANCEL" if order.kind == "limit" and order.tif == "gtc" else "DAY"
+            ),
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
                 {
@@ -624,6 +649,8 @@ class Trader:
         return notional
 
     def preview(self, raw: Any) -> dict[str, Any]:
+        if isinstance(raw, dict):  # the policy's defaults apply to whatever the request leaves out
+            raw = {"session": self.policy.default_session, "tif": self.policy.default_tif, **raw}
         order = parse_order(raw)
         broker = self._broker(order)
         last = broker.last_price(order.ticker)
@@ -884,6 +911,8 @@ def _describe(order: Order) -> dict[str, Any]:
     }
     if order.account:
         described["account"] = order.account
+    if order.broker == "schwab":
+        described["session"], described["tif"] = order.session, order.tif
     return described
 
 
