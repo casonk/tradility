@@ -1,0 +1,57 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Mock trade ticket</title></head>
+<body>
+<!-- A stand-in for a broker's trade ticket: labelled controls, a Preview step and a Place order step.
+     It is not Fidelity's page; it only exercises the driver's mechanics. -->
+<h1>Trade stocks</h1>
+<div id="ticket">
+  <button role="combobox" aria-label="Account" id="acct-btn" onclick="document.getElementById('acct-list').hidden=false">Select account</button>
+  <ul id="acct-list" role="listbox" hidden>
+    <li role="option" onclick="pick('Individual TOD ***4917')">Individual TOD ***4917</li>
+    <li role="option" onclick="pick('HSA ***9422')">HSA ***9422</li>
+  </ul>
+  <label>Symbol <input id="symbol" type="text"></label>
+  <div role="radiogroup" aria-label="Action">
+    <label><input type="radio" name="action" value="Buy"> Buy</label>
+    <label><input type="radio" name="action" value="Sell"> Sell</label>
+  </div>
+  <label>Quantity <input id="qty" type="text"></label>
+  <div role="radiogroup" aria-label="Order type">
+    <label><input type="radio" name="otype" value="Market"> Market</label>
+    <label><input type="radio" name="otype" value="Limit"> Limit</label>
+  </div>
+  <label>Limit price <input id="limit" type="text"></label>
+  <div role="radiogroup" aria-label="Time in force">
+    <label><input type="radio" name="tif" value="Day"> Day</label>
+    <label><input type="radio" name="tif" value="Good till canceled"> Good till canceled</label>
+  </div>
+  <label><input type="checkbox" id="ext"> Extended hours trading</label>
+  <button id="preview" onclick="doPreview()">Preview order</button>
+</div>
+<div id="review" hidden>
+  <h2>Review your order</h2>
+  <p id="summary"></p>
+  <button id="place" onclick="doPlace()">Place order</button>
+</div>
+<div id="done" hidden><p id="doneText"></p></div>
+<script>
+  let account = '';
+  function pick(v) { account = v; document.getElementById('acct-btn').textContent = v; document.getElementById('acct-list').hidden = true; }
+  function val(name) { const r = document.querySelector(`input[name=${name}]:checked`); return r ? r.value : ''; }
+  function doPreview() {
+    const otype = val('otype');
+    const parts = [account, val('action'), document.getElementById('qty').value, 'shares of', document.getElementById('symbol').value.toUpperCase(), otype];
+    if (otype === 'Limit') parts.push('at $' + document.getElementById('limit').value);
+    parts.push(val('tif'), document.getElementById('ext').checked ? 'Extended hours: Yes' : 'Extended hours: No');
+    // a deliberately wrong echo, used to prove a mismatch stops everything
+    if (window.__mismatch) parts[2] = String(Number(parts[2]) + 1);
+    document.getElementById('summary').textContent = parts.join(' ');
+    document.getElementById('review').hidden = false;
+  }
+  function doPlace() {
+    document.getElementById('doneText').textContent = 'Your order has been placed. Order number: ABC123456';
+    document.getElementById('done').hidden = false; document.getElementById('review').hidden = true;
+    window.__placed = (window.__placed || 0) + 1;
+  }
+</script>
+</body></html>
