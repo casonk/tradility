@@ -617,3 +617,44 @@ def test_the_policy_reads_the_confirmation_mode(tmp_path):
     path.write_text('[defaults]\nconfirmation = "none"\n')
     with pytest.raises(t.TradingError, match="confirmation is phrase or button"):
         t.load_policy(path)
+
+
+def test_schwab_validation_text_is_read_from_activity_message():
+    def reject(method, url, headers, body):
+        if url.endswith("previewOrder"):
+            return (
+                200,
+                {},
+                {
+                    "orderValidationResult": {
+                        "rejects": [
+                            {
+                                "activityMessage": "You do not have enough available cash/buying power for this order."
+                            }
+                        ]
+                    }
+                },
+            )
+        return Fake()(method, url, headers, body)
+
+    broker = t.SchwabTrader("tok", reject)
+    with pytest.raises(t.TradingError, match="not have enough available cash/buying power"):
+        broker.preview(t.Order("AAPL", "buy", "limit", 1.0, 100.0, "1234"))
+
+    def warn(method, url, headers, body):
+        if url.endswith("previewOrder"):
+            return (
+                200,
+                {},
+                {
+                    "orderValidationResult": {
+                        "warns": [{"activityMessage": "extended hours risk"}],
+                        "alerts": [{"message": "old style"}],
+                    }
+                },
+            )
+        return Fake()(method, url, headers, body)
+
+    assert t.SchwabTrader("tok", warn).preview(t.Order("AAPL", "buy", "limit", 1.0, 100.0, "1234"))[
+        "warnings"
+    ] == ["extended hours risk", "old style"]
