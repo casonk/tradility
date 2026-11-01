@@ -378,6 +378,11 @@ class Placed:
     detail: dict[str, Any] = field(default_factory=dict)
 
 
+def _validation_text(item: dict[str, Any], fallback: str) -> str:
+    """The words of one Schwab validation entry (its text is in ``activityMessage``)."""
+    return str(item.get("activityMessage") or item.get("message") or fallback)
+
+
 class SchwabTrader:
     name = "schwab"
 
@@ -450,14 +455,14 @@ class SchwabTrader:
             raise TradingError(f"Schwab rejected the preview (HTTP {status})")
         result = payload.get("orderValidationResult") or {}
         rejects = [
-            str(r.get("message", "rejected"))
+            _validation_text(r, "rejected")
             for r in result.get("rejects") or []
             if isinstance(r, dict)
         ]
         if rejects:
             raise TradingError("Schwab would reject this order: " + "; ".join(rejects)[:300])
         warnings = [
-            str(w.get("message", ""))
+            _validation_text(w, "")
             for w in (result.get("warns") or []) + (result.get("alerts") or [])
             if isinstance(w, dict)
         ]
