@@ -1,0 +1,18 @@
+# Example trading policy (synthetic values). Copy to ~/.config/tradility/trading.toml and chmod 600.
+# Nothing can be placed unless `enabled = true`. The file is re-read on every request, so setting
+# it back to false stops trading immediately.
+enabled = false
+
+per_order_usd = 250        # reject any order whose cost is above this
+daily_usd = 500            # reject an order that would push the day's total above this (UTC day)
+price_band_pct = 3         # reject a limit price more than this far from the last price
+
+# Only tickers listed here can be traded; BTC-USD style names route to Binance.US, the rest to Schwab.
+tickers = ["AAPL", "BTC-USD"]
+
+[brokers]
+schwab = true
+binance = true
+
+[schwab]
+account = "1234"           # the last digits of the one Schwab account that may be traded
