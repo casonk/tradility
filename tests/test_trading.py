@@ -462,3 +462,49 @@ def test_a_market_order_defaults_to_a_regular_hours_day_order_and_may_be_fill_or
     pv = trader.preview(order(kind="market", price=None, quantity=1, tif="fok"))
     trader.confirm(pv["preview_id"], "BUY AAPL")
     assert body_of(send)["duration"] == "FILL_OR_KILL"
+
+
+def test_the_default_templates_are_one_two_four_and_eight_percent_under_for_buys_and_over_for_sells(
+    rig,
+):
+    trader, *_ = rig
+    got = {x["name"]: x for x in trader.quote("AAPL")["templates"]}
+    assert [x["price"] for x in got.values() if x["side"] == "buy"] == [99.0, 98.0, 96.0, 92.0]
+    assert [x["price"] for x in got.values() if x["side"] == "sell"] == [101.0, 102.0, 104.0, 108.0]
+    assert got["Buy 4% under"]["offset_pct"] == -4 and got["Sell 8% over"]["side"] == "sell"
+
+
+def test_binance_template_prices_land_on_the_tick(rig):
+    trader, *_ = rig
+    prices = [x["price"] for x in trader.quote("BTC-USD")["templates"] if x["side"] == "buy"]
+    assert prices == [49500.0, 49000.0, 48000.0, 46000.0]
+
+
+def test_the_policy_can_define_its_own_templates_with_a_duration_and_hours(tmp_path):
+    path = tmp_path / "p.toml"
+    path.write_text(
+        'enabled = true\n[[templates]]\nname = "Dip 3%"\nside = "buy"\noffset_pct = -3\ntif = "gtc"\nsession = "extended"\n'
+        '[[templates]]\nname = "Take 6%"\nside = "sell"\noffset_pct = 6\n'
+    )
+    os.chmod(path, 0o600)
+    assert t.load_policy(path).templates == (
+        ("Dip 3%", "buy", -3.0, "gtc", "extended"),
+        ("Take 6%", "sell", 6.0, "", ""),
+    )
+    for bad in (
+        '[[templates]]\nname = "x"\nside = "hold"\noffset_pct = 1\n',
+        '[[templates]]\nname = "x"\nside = "buy"\noffset_pct = 99\n',
+        '[[templates]]\nname = "x"\nside = "buy"\noffset_pct = 1\ntif = "forever"\n',
+        '[[templates]]\nside = "buy"\noffset_pct = 1\n',
+    ):
+        path.write_text("enabled = true\n" + bad)
+        with pytest.raises(t.TradingError):
+            t.load_policy(path)
+    path.write_text("enabled = true\n")
+    assert t.load_policy(path).templates is None  # none given: the built-in set applies
+
+
+def test_an_empty_templates_list_means_no_templates_not_the_defaults(rig):
+    trader, *_ = rig
+    trader.policy = t.Policy(**{**POLICY.__dict__, "templates": ()})
+    assert trader.quote("AAPL")["templates"] == []
