@@ -241,3 +241,19 @@ there). Cancelling an open order needs `CANCEL <order id>`. Limit and market ord
 hand-off commands: `TRADILITY_SCHWAB_TOKEN_COMMAND` (as for reading) and
 `TRADILITY_BINANCE_TRADE_CREDENTIAL_COMMAND`, a command printing a **separate trade-enabled, withdrawal-disabled**
 Binance.US key as `{"api_key": "...", "api_secret": "..."}`; keep the read-only key for order reading.
+
+## Deposits and withdrawals
+
+`tradility.transfers` is read-only: it lists cash movements in your Schwab accounts (ACH, wire, journal and
+cash receipts and disbursements) and Binance.US deposits and withdrawals over the past year (`GET /transfers` on
+the trader service). Schwab's API has no money-movement endpoints, so it cannot start a Schwab transfer.
+
+Binance.US **withdrawals** exist but are off until `[withdrawals] enabled = true` in the trading policy, and
+they use their own key (`TRADILITY_BINANCE_WITHDRAW_CREDENTIAL_COMMAND`, withdrawals on, ideally IP-restricted):
+
+- only to destinations listed in the policy (label, coin, network, address), never an address typed in the page;
+- a per-withdrawal and a daily dollar cap, counting outcomes that were unknown after a timeout;
+- a preview (balance, caps, the destination's last six characters), then the typed phrase
+  `WITHDRAW <amount> <coin> TO <label>`; every step is in the audit log, which never holds an address.
+
+Binance.US withdrawals cannot be undone. Also use Binance.US's own address whitelist and IP restriction.

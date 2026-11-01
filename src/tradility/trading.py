@@ -83,6 +83,12 @@ class Policy:
     schwab_accounts: tuple[str, ...] = ()  # last digits of each Schwab account that may be traded
     buy_offset_pct: float = -2.5  # the order form's default limit price relative to the mark
     sell_offset_pct: float = 2.5
+    # Withdrawals are off unless this section turns them on, and only go to listed addresses.
+    withdrawals_enabled: bool = False
+    withdraw_per_usd: float = 0.0
+    withdraw_daily_usd: float = 0.0
+    # (label, coin, network, address) for each pre-approved destination
+    withdraw_addresses: tuple[tuple[str, str, str, str], ...] = ()
 
     def check_ticker(self, ticker: str) -> None:
         if "*" not in self.tickers and ticker not in self.tickers:
@@ -118,9 +124,25 @@ def load_policy(path: Path | None = None) -> Policy:
             ),
             buy_offset_pct=float((raw.get("defaults") or {}).get("buy_offset_pct", -2.5)),
             sell_offset_pct=float((raw.get("defaults") or {}).get("sell_offset_pct", 2.5)),
+            withdrawals_enabled=(raw.get("withdrawals") or {}).get("enabled") is True,
+            withdraw_per_usd=float((raw.get("withdrawals") or {}).get("per_withdrawal_usd", 0)),
+            withdraw_daily_usd=float((raw.get("withdrawals") or {}).get("daily_withdrawal_usd", 0)),
+            withdraw_addresses=tuple(
+                (
+                    str(a["label"]).strip(),
+                    str(a["coin"]).upper(),
+                    str(a.get("network", "")),
+                    str(a["address"]).strip(),
+                )
+                for a in (raw.get("withdrawals") or {}).get("addresses", [])
+            ),
         )
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, KeyError) as exc:
         raise TradingError("trading policy has a bad value") from exc
+    if not all(
+        math.isfinite(v) and v >= 0 for v in (policy.withdraw_per_usd, policy.withdraw_daily_usd)
+    ):
+        raise TradingError("withdrawal limits must be finite and not negative")
     if not all(math.isfinite(v) for v in (policy.buy_offset_pct, policy.sell_offset_pct)):
         raise TradingError("trading policy default offsets must be finite")
     if not all(
@@ -196,7 +218,9 @@ class Audit:
         with os.fdopen(fd, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry, sort_keys=True) + "\n")
 
-    def spent_today(self, now: datetime | None = None) -> float:
+    def spent_today(
+        self, now: datetime | None = None, events: frozenset[str] = frozenset({"placed", "unknown"})
+    ) -> float:
         """Notional of every order sent today (UTC), including ones whose outcome is unknown."""
         day = (now or datetime.now(UTC)).date().isoformat()
         total = 0.0
@@ -209,9 +233,7 @@ class Audit:
                 entry = json.loads(line)
             except ValueError:
                 continue
-            if entry.get("event") in {"placed", "unknown"} and str(entry.get("ts", "")).startswith(
-                day
-            ):
+            if entry.get("event") in events and str(entry.get("ts", "")).startswith(day):
                 total += float(entry.get("notional", 0) or 0)
         return total
 
@@ -493,6 +515,40 @@ class BinanceTrader:
             )
 
 
+class BinanceWithdrawer(BinanceTrader):
+    """Withdrawals use their own credentials (a key allowed to withdraw, ideally IP-restricted)."""
+
+    def balance(self, coin: str) -> float:
+        status, payload = self._signed("GET", "/api/v3/account", {})
+        if status != 200:
+            raise TradingError(f"Binance.US account lookup failed (HTTP {status})")
+        for row in payload.get("balances", []):
+            if str(row.get("asset", "")).upper() == coin:
+                return float(row.get("free", 0) or 0)
+        return 0.0
+
+    def usd_price(self, coin: str) -> float:
+        if coin in {"USD", "USDT", "USDC"}:
+            return 1.0
+        return self.last_price(f"{coin}-USD")
+
+    def withdraw(self, coin: str, network: str, address: str, amount: float, client_id: str) -> str:
+        params: dict[str, Any] = {
+            "coin": coin,
+            "address": address,
+            "amount": f"{amount:.8f}".rstrip("0").rstrip("."),
+            "withdrawOrderId": client_id,
+        }
+        if network:
+            params["network"] = network
+        status, payload = self._signed("POST", "/sapi/v1/capital/withdraw/apply", params)
+        if status != 200:
+            raise TradingError(
+                f"Binance.US did not accept the withdrawal: {str(payload.get('msg', status))[:200]}"
+            )
+        return str(payload.get("id", "unknown"))
+
+
 # -- the trader ---------------------------------------------------------------------------------
 
 
@@ -602,6 +658,8 @@ class Trader:
                 "that preview has expired or was already used; preview the order again"
             )
         order, _, _ = entry
+        if not isinstance(order, Order):
+            raise TradingError("that preview is for a withdrawal, not an order")
         if str(phrase).strip() != order.phrase:
             self.audit.write("rejected", reason="phrase", order=_describe(order))
             raise TradingError(f'type exactly "{order.phrase}" to confirm')
@@ -647,6 +705,144 @@ class Trader:
             "broker": order.broker,
             "broker_order_id": placed.broker_order_id,
             "order": _describe(order),
+        }
+
+    # -- withdrawals: a separate switch, address allowlist, caps, preview and typed phrase ----------
+
+    WITHDRAW_EVENTS = frozenset({"withdrawn", "withdraw_unknown"})
+
+    def _withdrawer(self) -> Any:
+        if not self.policy.enabled or not self.policy.withdrawals_enabled:
+            raise TradingError("withdrawals are turned off in the policy")
+        if "binance_withdraw" not in self.brokers:
+            raise TradingError("no Binance.US withdrawal credentials are configured")
+        return self.brokers["binance_withdraw"]()
+
+    def withdraw_preview(self, raw: Any) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            raise TradingError("a withdrawal is an object")
+        label = str(raw.get("label", "")).strip()
+        entry = next((a for a in self.policy.withdraw_addresses if a[0] == label), None)
+        if entry is None:
+            raise TradingError("that destination is not on the policy's withdrawal allowlist")
+        _, coin, network, address = entry
+        try:
+            amount = float(raw.get("amount"))
+        except (TypeError, ValueError) as exc:
+            raise TradingError("amount must be a number") from exc
+        if not math.isfinite(amount) or amount <= 0:
+            raise TradingError("amount must be positive")
+        broker = self._withdrawer()
+        notional = amount * broker.usd_price(coin)
+        if self.policy.withdraw_per_usd <= 0 or notional > self.policy.withdraw_per_usd:
+            raise TradingError(
+                f"this withdrawal is about ${notional:,.2f}, over the ${self.policy.withdraw_per_usd:,.2f} per-withdrawal limit"
+            )
+        spent = self.audit.spent_today(events=self.WITHDRAW_EVENTS)
+        if self.policy.withdraw_daily_usd <= 0 or spent + notional > self.policy.withdraw_daily_usd:
+            raise TradingError(
+                f"with ${spent:,.2f} already withdrawn today this would pass the ${self.policy.withdraw_daily_usd:,.2f} daily limit"
+            )
+        if broker.balance(coin) < amount:
+            raise TradingError(f"not enough {coin} available to withdraw")
+        phrase = f"WITHDRAW {amount:g} {coin} TO {label}"
+        token = secrets.token_urlsafe(18)
+        with self._lock:
+            now = self.now()
+            self._previews = {k: v for k, v in self._previews.items() if v[1] > now}
+            self._previews[token] = (
+                (label, coin, network, address, amount, phrase),
+                now + PREVIEW_TTL_SECONDS,
+                notional,
+            )  # type: ignore[assignment]
+        self.audit.write(
+            "withdraw_preview", label=label, coin=coin, amount=amount, notional=notional
+        )
+        return {
+            "preview_id": token,
+            "expires_in": PREVIEW_TTL_SECONDS,
+            "phrase": phrase,
+            "label": label,
+            "coin": coin,
+            "network": network,
+            "to": "…" + address[-6:],
+            "amount": amount,
+            "notional": notional,
+        }
+
+    def withdraw_confirm(self, token: str, phrase: str) -> dict[str, Any]:
+        with self._lock:
+            entry = self._previews.pop(str(token), None)
+        if (
+            entry is None
+            or entry[1] <= self.now()
+            or not isinstance(entry[0], tuple)
+            or len(entry[0]) != 6
+        ):
+            raise TradingError(
+                "that preview has expired or was already used; preview the withdrawal again"
+            )
+        (label, coin, network, address, amount, expected), _, notional = entry
+        if str(phrase).strip() != expected:
+            self.audit.write("withdraw_rejected", reason="phrase", label=label)
+            raise TradingError(f'type exactly "{expected}" to confirm')
+        broker = self._withdrawer()
+        # the destination must still be on the allowlist, and the caps are checked again
+        if (label, coin, network, address) not in self.policy.withdraw_addresses:
+            raise TradingError("that destination is no longer on the withdrawal allowlist")
+        notional = amount * broker.usd_price(coin)
+        spent = self.audit.spent_today(events=self.WITHDRAW_EVENTS)
+        if (
+            self.policy.withdraw_per_usd <= 0
+            or notional > self.policy.withdraw_per_usd
+            or self.policy.withdraw_daily_usd <= 0
+            or spent + notional > self.policy.withdraw_daily_usd
+        ):
+            raise TradingError("this withdrawal is over a policy limit now; preview it again")
+        client_id = "tradility-w-" + secrets.token_hex(8)
+        self.audit.write(
+            "withdraw_sending",
+            label=label,
+            coin=coin,
+            amount=amount,
+            notional=notional,
+            client_id=client_id,
+        )
+        try:
+            withdrawal_id = broker.withdraw(coin, network, address, amount, client_id)
+        except TradingError as exc:
+            self.audit.write(
+                "withdraw_failed", label=label, error=str(exc)[:300], client_id=client_id
+            )
+            raise
+        except (OSError, URLError, ValueError) as exc:
+            self.audit.write(
+                "withdraw_unknown",
+                label=label,
+                coin=coin,
+                amount=amount,
+                notional=notional,
+                client_id=client_id,
+                error=type(exc).__name__,
+            )
+            raise TradingError(
+                "the withdrawal's outcome is unknown; check Binance.US before trying again"
+            ) from exc
+        self.audit.write(
+            "withdrawn",
+            label=label,
+            coin=coin,
+            amount=amount,
+            notional=notional,
+            withdrawal_id=withdrawal_id,
+            client_id=client_id,
+        )
+        return {
+            "withdrawn": True,
+            "label": label,
+            "coin": coin,
+            "amount": amount,
+            "withdrawal_id": withdrawal_id,
         }
 
     def cancel(
@@ -719,7 +915,20 @@ def build_brokers(
             raise TradingError("the Binance.US trade credential command returned no key")
         return BinanceTrader(key, secret, send)
 
-    return {"schwab": schwab, "binance": binance}
+    def binance_withdraw() -> BinanceWithdrawer:
+        command = env.get("TRADILITY_BINANCE_WITHDRAW_CREDENTIAL_COMMAND", "").strip()
+        if not command:
+            raise TradingError("no Binance.US withdrawal credentials are configured")
+        creds = run_credential_command(command)
+        key, secret = (
+            str(creds.get("api_key", "")).strip(),
+            str(creds.get("api_secret", "")).strip(),
+        )
+        if not key or not secret:
+            raise TradingError("the Binance.US withdrawal credential command returned no key")
+        return BinanceWithdrawer(key, secret, send)
+
+    return {"schwab": schwab, "binance": binance, "binance_withdraw": binance_withdraw}
 
 
 __all__ = [
