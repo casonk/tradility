@@ -38,12 +38,17 @@ class Service:
         self._accounts: tuple[float, dict[str, Any]] | None = None
         self.trader.accounts_loader = self._cached_accounts
         self.trader.statements_loader = self._statements
+        self._fidelity_client = None
         self.transfer_loader = transfers_module.collect
         self._transfers: tuple[float, dict[str, Any]] | None = None
 
     def _current(self) -> t.Trader:
         policy = self.policy_loader()
         self.trader.policy = policy
+        if policy.fidelity_automation != "off" and self.trader.fidelity_driver is None:
+            from tradility.fidelity_client import WorkerClient
+
+            self.trader.fidelity_driver = self._fidelity_client = WorkerClient()
         self.trader.brokers = t.build_brokers(policy, send=self.send)
         return self.trader
 
@@ -94,6 +99,7 @@ class Service:
             "daily_usd": policy.daily_usd,
             "price_band_pct": policy.price_band_pct,
             "schwab_accounts": list(policy.schwab_accounts),
+            "fidelity_automation": policy.fidelity_automation,
             "fidelity_accounts": (
                 self._current().fidelity_accounts() if policy.fidelity_accounts else []
             ),
@@ -152,6 +158,8 @@ class Service:
                 "/withdraw/preview",
                 "/withdraw/confirm",
                 "/fidelity/ticket",
+                "/fidelity/stage",
+                "/fidelity/submit",
             }:
                 return HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"}
             try:
@@ -161,6 +169,13 @@ class Service:
             if not isinstance(data, dict):
                 return HTTPStatus.BAD_REQUEST, {"ok": False, "error": "send a JSON object"}
             trader = self._current()
+            if path == "/fidelity/stage":
+                return HTTPStatus.OK, {"ok": True, **trader.fidelity_stage(data)}
+            if path == "/fidelity/submit":
+                return HTTPStatus.OK, {
+                    "ok": True,
+                    **trader.fidelity_submit(data.get("preview_id", ""), data.get("phrase", "")),
+                }
             if path == "/fidelity/ticket":
                 return HTTPStatus.OK, {"ok": True, **trader.fidelity_ticket(data)}
             if path == "/withdraw/preview":

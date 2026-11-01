@@ -257,3 +257,22 @@ they use their own key (`TRADILITY_BINANCE_WITHDRAW_CREDENTIAL_COMMAND`, withdra
   `WITHDRAW <amount> <coin> TO <label>`; every step is in the audit log, which never holds an address.
 
 Binance.US withdrawals cannot be undone. Also use Binance.US's own address whitelist and IP restriction.
+
+## Fidelity by browser (unofficial)
+
+Fidelity has no order API for individuals, and Active Trader Pro is a Windows program, so the only way to place an
+order is Fidelity's website. `[fidelity] automation` in the trading policy controls it (default `off`):
+
+1. Sign in once yourself: `python -m tradility.fidelity_browser login` opens a visible browser on a saved profile
+   (`~/.local/state/tradility/fidelity-profile`, owner-only). You pass Fidelity's two-factor step and "remember this
+   device"; this code never types a password or a code. When the session lapses it stops and asks you to sign in again.
+2. `stage` fills the ticket, presses Fidelity's **Preview** and reads the preview back, checking the symbol, action,
+   quantity, limit price, order type, duration and account against the order. Any difference stops everything. A
+   screenshot is saved next to the profile.
+3. `submit` presses the final button on that verified page, once, only if `automation = "submit"`, after your
+   confirmation, and under the same caps and audit log as other orders (it counts toward the daily limit).
+
+It runs in a helper under the system Python (`TRADILITY_FIDELITY_PYTHON`, default `/usr/bin/python3`) that has
+Playwright; the trader service does not. Control names are matched by label, and you can correct one in
+`~/.config/tradility/fidelity-labels.toml` (keys: account, symbol, quantity, limit_price, extended, preview, place).
+It is tested against a local mock of a trade ticket, never against Fidelity, so stage first and look at the screenshot.
