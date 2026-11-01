@@ -27,6 +27,15 @@
   but not edited; add a replace (cancel plus new, or Schwab's replace endpoint) with the same preview and typed
   confirmation.
 
+- [ ] [manual:2026-11-01] **Fidelity live read** — Fidelity accounts are only known from monthly or quarterly
+  statements (the latest is as of 2026-02-28), so their balances, positions and the "everything" totals are stale
+  and there are no open orders. Fidelity has no individual API and SnapTrade's connection is read-only; options are a
+  read-only authenticated browser session (windshield, with the 2FA handling the statement downloader already has),
+  or an aggregator that supports Fidelity positions. Either one feeds `statement_accounts`' replacement.
+- [ ] [manual:2026-11-01] **Fidelity order submission (high risk, unofficial)** — decided against for now: only
+  Fidelity's website can submit orders, so it would mean browser automation behind the same policy, caps, preview
+  and audit log, and it may breach Fidelity's terms. Revisit if Fidelity or an aggregator adds trading.
+
 ## Data Sources
 
 - [ ] **Alpha Vantage adapter** — `src/tradility/sources/alpha_vantage.py`; free tier with API key; better fundamentals and EPS data than yfinance; rate-limited (5 calls/min free tier)
