@@ -20,6 +20,7 @@ logged, audited or returned.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import hmac
 import json
@@ -94,6 +95,8 @@ class Policy:
     brokers: tuple[str, ...] = ()
     tickers: frozenset[str] = frozenset()
     schwab_accounts: tuple[str, ...] = ()  # last digits of each Schwab account that may be traded
+    # Fidelity has no order API: these accounts only get a prepared ticket you submit yourself
+    fidelity_accounts: tuple[str, ...] = ()
     buy_offset_pct: float = -2.5  # the order form's default limit price relative to the mark
     sell_offset_pct: float = 2.5
     default_session: str = "normal"  # what the order form starts with: "normal" or "extended"
@@ -184,6 +187,11 @@ def load_policy(path: Path | None = None) -> Policy:
                 for a in (raw.get("schwab") or {}).get("accounts", [])
                 if str(a).strip()
             ),
+            fidelity_accounts=tuple(
+                str(a).strip()
+                for a in (raw.get("fidelity") or {}).get("accounts", [])
+                if str(a).strip()
+            ),
             buy_offset_pct=float((raw.get("defaults") or {}).get("buy_offset_pct", -2.5)),
             sell_offset_pct=float((raw.get("defaults") or {}).get("sell_offset_pct", 2.5)),
             default_session=str((raw.get("defaults") or {}).get("session", "normal")).lower(),
@@ -238,9 +246,12 @@ class Order:
     account: str = ""  # a Schwab account's last digits; Binance.US has one account
     session: str = "normal"  # "extended" also trades pre-market and after hours (Schwab SEAMLESS)
     tif: str = "gtc"  # "gtc" rests until filled or cancelled; "day" expires at the close
+    venue: str = ""  # "fidelity" for a ticket prepared for Fidelity (nothing is ever sent there)
 
     @property
     def broker(self) -> str:
+        if self.venue:
+            return self.venue
         return "binance" if self.ticker.endswith("-USD") else "schwab"
 
     @property
@@ -691,6 +702,12 @@ class Trader:
         # the impact is an extra; a broker hiccup must not block a preview
         except Exception:  # noqa: BLE001
             return None
+        if order.venue == "fidelity":
+            # Fidelity accounts are known from statements: count them as accounts for this ticket
+            try:
+                accounts = [*accounts, *((self.statements_loader() or {}).get("accounts") or [])]
+            except Exception:  # noqa: BLE001
+                return None
         price = order.price if order.price is not None else last
         cost = order.quantity * price
         sign = 1 if order.side == "buy" else -1
@@ -699,7 +716,11 @@ class Trader:
                 a
                 for a in accounts
                 if a.get("broker") == order.broker
-                and (order.broker == "binance" or a.get("id") == order.account)
+                and (
+                    order.broker == "binance"
+                    or a.get("id") == order.account
+                    or a.get("key") == order.account
+                )
             ),
             None,
         )
@@ -1013,6 +1034,102 @@ class Trader:
             "broker_order_id": placed.broker_order_id,
             "order": _describe(order),
         }
+
+    # -- Fidelity: no order API exists, so we prepare a ticket you submit at Fidelity yourself --------
+
+    FIDELITY_URL = "https://digital.fidelity.com/ftgw/digital/trade-equity/index/orderEntry"
+
+    def fidelity_ticket(self, raw: Any) -> dict[str, Any]:
+        """Check an order against the policy and lay it out in Fidelity's own terms. Nothing is sent
+        anywhere: you review and submit it on Fidelity's trade page, then record that you did."""
+        if not self.policy.enabled:
+            raise TradingError("trading is turned off in the policy")
+        if not isinstance(raw, dict):
+            raise TradingError("an order is an object")
+        raw = {"session": self.policy.default_session, "tif": self.policy.default_tif, **raw}
+        if raw.get("kind") == "market":
+            raw = {**raw, "session": "normal", "tif": "day"} if "tif" not in raw else raw
+        order = parse_order(raw)
+        order = dataclasses.replace(order, venue="fidelity")
+        if order.account not in self.policy.fidelity_accounts:
+            raise TradingError("choose one of the Fidelity accounts the policy lists")
+        self.policy.check_ticker(order.ticker)
+        if order.ticker.endswith("-USD"):
+            raise TradingError("crypto is not traded through a Fidelity ticket here")
+        if order.tif not in ("day", "gtc"):
+            raise TradingError("Fidelity tickets here are day or good till canceled orders")
+        if order.session not in ("normal", "extended"):
+            raise TradingError("Fidelity offers regular hours or extended hours")
+        if order.session == "extended" and (order.kind != "limit" or order.tif != "day"):
+            raise TradingError("Fidelity extended-hours orders are day limit orders")
+        if order.kind == "limit" and order.quantity != int(order.quantity):
+            raise TradingError(
+                "Fidelity limit orders need whole shares; fractional shares are market orders"
+            )
+        quote_broker = self.brokers.get("schwab")
+        if quote_broker is None:
+            raise TradingError("a live price needs Schwab to be enabled for quotes")
+        last = quote_broker().last_price(order.ticker)
+        notional = self._limits(order, last)
+        mine = self._fidelity_account(order.account)
+        warnings = []
+        if order.tif == "gtc":
+            warnings.append("Fidelity cancels good-till-canceled orders after 60 days.")
+        if mine and mine.get("as_of"):
+            warnings.append(
+                f"Fidelity holdings here are from the {mine['as_of']} statement, so the position impact may be out of date."
+            )
+        price_text = f"${order.price:,.2f}" if order.price is not None else None
+        fields = [
+            ("Account", mine["label"] if mine else f"Fidelity …{order.account}"),
+            ("Action", order.side.capitalize()),
+            ("Symbol", order.ticker),
+            ("Quantity", f"{order.quantity:g}"),
+            ("Order type", "Limit" if order.kind == "limit" else "Market"),
+            *([("Limit price", price_text)] if price_text else []),
+            ("Time in force", "Good till canceled" if order.tif == "gtc" else "Day"),
+            ("Extended hours", "Yes" if order.session == "extended" else "No"),
+        ]
+        self.audit.write("fidelity_ticket", order=_describe(order), notional=notional)
+        return {
+            "venue": "fidelity",
+            "order": _describe(order),
+            "fields": [list(f) for f in fields],
+            "text": "\n".join(f"{k}: {v}" for k, v in fields),
+            "url": self.FIDELITY_URL,
+            "last_price": last,
+            "notional": notional,
+            "warnings": warnings,
+            "impact": self.impact(order, last),
+        }
+
+    def _fidelity_account(self, account: str) -> dict[str, Any] | None:
+        try:
+            rows = (self.statements_loader() or {}).get("accounts") or []
+        except Exception:  # noqa: BLE001
+            return None
+        matches = [
+            a
+            for a in rows
+            if a.get("broker") == "fidelity" and account in (a.get("id"), a.get("key"))
+        ]
+        return max(matches, key=lambda a: a.get("total_value", 0.0), default=None)
+
+    def fidelity_accounts(self) -> list[dict[str, Any]]:
+        """The policy's Fidelity accounts that the statements know, for the order form."""
+        out = []
+        for account in self.policy.fidelity_accounts:
+            found = self._fidelity_account(account)
+            out.append(
+                {
+                    "id": account,
+                    "label": found["label"] if found else f"Fidelity …{account}",
+                    "type": found["type"] if found else "",
+                    "as_of": found["as_of"] if found else "",
+                    "total_value": found["total_value"] if found else None,
+                }
+            )
+        return out
 
     # -- withdrawals: a separate switch, address allowlist, caps, preview and typed phrase ----------
 

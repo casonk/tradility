@@ -52,3 +52,9 @@ name = "Sell 4% over, day"
 side = "sell"
 offset_pct = 4
 tif = "day"
+
+# Fidelity has no order API for individuals, so a Fidelity account only gets a prepared ticket: the order is
+# checked against this policy and laid out in Fidelity's terms, and you submit it on Fidelity's own trade page.
+# Name an account by its last four digits (add the type, e.g. "7866:hsa", when two accounts share the digits).
+[fidelity]
+accounts = ["4917"]

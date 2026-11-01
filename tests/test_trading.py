@@ -734,3 +734,147 @@ def test_the_service_serves_holdings_per_ticker_behind_the_same_gate(tmp_path):
         )[0]
         == 403
     )
+
+
+FID_STATEMENTS = {
+    "institutions": {"fid": {"name": "Fidelity", "total": 5000.0, "as_of": "2026-02-28"}},
+    "holdings": {"AAPL": {"quantity": 4.0, "market_value": 400.0}},
+    "accounts": [
+        {
+            "broker": "fidelity",
+            "id": "4917",
+            "key": "4917:individ",
+            "label": "Fidelity …4917",
+            "type": "individ",
+            "total_value": 5000.0,
+            "as_of": "2026-02-28",
+            "holdings": {"AAPL": {"quantity": 4.0, "market_value": 400.0}},
+        },
+        {
+            "broker": "fidelity",
+            "id": "7866",
+            "key": "7866:bl-trad",
+            "label": "Fidelity …7866",
+            "type": "bl-trad",
+            "total_value": 40000.0,
+            "as_of": "2026-02-28",
+            "holdings": {},
+        },
+        {
+            "broker": "fidelity",
+            "id": "7866",
+            "key": "7866:hsa",
+            "label": "Fidelity …7866",
+            "type": "hsa",
+            "total_value": 281.0,
+            "as_of": "2026-02-28",
+            "holdings": {},
+        },
+    ],
+}
+
+
+@pytest.fixture
+def fid(rig):
+    trader, send, audit, clock = rig
+    trader.policy = t.Policy(**{**POLICY.__dict__, "fidelity_accounts": ("4917", "7866")})
+    trader.accounts_loader = lambda: ACCOUNTS
+    trader.statements_loader = lambda: FID_STATEMENTS
+    return trader, send, audit
+
+
+def test_a_fidelity_ticket_lays_the_order_out_in_fidelitys_terms_and_sends_nothing(fid):
+    trader, send, audit = fid
+    got = trader.fidelity_ticket(
+        order(account="4917", quantity=2, price=100, tif="day", session="normal")
+    )
+    fields = dict(got["fields"])
+    assert fields["Action"] == "Buy" and fields["Symbol"] == "AAPL" and fields["Quantity"] == "2"
+    assert fields["Order type"] == "Limit" and fields["Limit price"] == "$100.00"
+    assert fields["Time in force"] == "Day" and fields["Extended hours"] == "No"
+    assert "Symbol: AAPL" in got["text"] and got["url"].startswith("https://digital.fidelity.com/")
+    assert not placements(send) and not any(
+        c[0] == "POST" for c in send.calls
+    )  # nothing goes anywhere
+    assert any("2026-02-28 statement" in w for w in got["warnings"])
+    events = [json.loads(line)["event"] for line in audit.path.read_text().splitlines()]
+    assert (
+        events == ["fidelity_ticket"] and audit.spent_today() == 0
+    )  # a ticket is not a sent order
+
+
+def test_the_ticket_shows_the_impact_in_the_fidelity_account_from_its_statement(fid):
+    trader, *_ = fid
+    imp = trader.fidelity_ticket(order(account="4917", quantity=2, price=100))["impact"]
+    assert imp["account"]["label"] == "Fidelity …4917"
+    assert imp["account"]["quantity"] == {"before": 4.0, "after": 6.0}
+    assert imp["account"]["value"] == {"before": 400.0, "after": 600.0}
+    assert imp["account"]["percent"]["before"] == pytest.approx(8.0)  # 400 / 5000
+    ids = [r["id"] for r in imp["holdings"]]
+    assert "4917" in ids and "1234" in ids  # Schwab accounts are in the picture too
+
+
+def test_a_shared_mask_is_told_apart_by_the_account_type(fid):
+    trader, *_ = fid
+    assert (
+        trader._fidelity_account("7866")["type"] == "bl-trad"
+    )  # the larger of the two with that mask
+    assert trader._fidelity_account("7866:hsa")["total_value"] == 281.0
+    accounts = trader.fidelity_accounts()
+    assert [a["id"] for a in accounts] == ["4917", "7866"] and accounts[0]["as_of"] == "2026-02-28"
+
+
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        ({"account": "9999"}, "Fidelity accounts the policy lists"),
+        ({"account": ""}, "Fidelity accounts the policy lists"),
+        ({"ticker": "BTC-USD"}, "crypto"),
+        ({"tif": "fok"}, "day or good till canceled"),
+        ({"session": "extended", "tif": "gtc"}, "extended-hours orders are day limit orders"),
+        ({"quantity": 1.5}, "whole shares"),
+        ({"quantity": 11}, "per-order limit"),
+        ({"price": 130}, "away from the last price"),
+        ({"side": "short"}, "buy or sell"),
+    ],
+)
+def test_fidelity_tickets_obey_the_policy_and_fidelitys_own_rules(fid, change, message):
+    trader, send, _ = fid
+    with pytest.raises(t.TradingError, match=message):
+        trader.fidelity_ticket(order(**{"account": "4917", **change}))
+    assert not placements(send)
+
+
+def test_a_gtc_ticket_warns_about_the_sixty_day_limit_and_tickets_need_trading_enabled(fid):
+    trader, *_ = fid
+    got = trader.fidelity_ticket(order(account="4917", tif="gtc", session="normal"))
+    assert (
+        any("60 days" in w for w in got["warnings"])
+        and dict(got["fields"])["Time in force"] == "Good till canceled"
+    )
+    trader.policy = t.Policy(**{**trader.policy.__dict__, "enabled": False})
+    with pytest.raises(t.TradingError, match="turned off"):
+        trader.fidelity_ticket(order(account="4917"))
+
+
+def test_the_service_serves_fidelity_tickets_and_lists_the_accounts_in_its_status(
+    tmp_path, monkeypatch
+):
+    from tradility import trader_service as ts
+
+    monkeypatch.setenv(
+        "TRADILITY_SCHWAB_ACCESS_TOKEN", "tok"
+    )  # the live price comes from Schwab's quote
+
+    policy = t.Policy(**{**POLICY.__dict__, "fidelity_accounts": ("4917",)})
+    svc = ts.Service(lambda: policy, t.Audit(tmp_path / "a.jsonl"), send=Fake())
+    svc.account_loader = lambda: ACCOUNTS
+    svc._statements = lambda: FID_STATEMENTS
+    svc.trader.statements_loader = svc._statements
+    good = {"Host": "127.0.0.1:8768", "X-Tradility-Trader": "1"}
+    code, status = svc.handle("GET", "/status", good, b"")
+    assert status["fidelity_accounts"][0]["label"] == "Fidelity …4917"
+    body = json.dumps(order(account="4917", quantity=1, price=100)).encode()
+    code, ticket = svc.handle("POST", "/fidelity/ticket", good, body)
+    assert code == 200 and ticket["venue"] == "fidelity" and ticket["fields"][0][0] == "Account"
+    assert svc.handle("POST", "/fidelity/ticket", {"Host": "evil.example"}, body)[0] == 403

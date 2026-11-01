@@ -94,6 +94,9 @@ class Service:
             "daily_usd": policy.daily_usd,
             "price_band_pct": policy.price_band_pct,
             "schwab_accounts": list(policy.schwab_accounts),
+            "fidelity_accounts": (
+                self._current().fidelity_accounts() if policy.fidelity_accounts else []
+            ),
             "confirmation": policy.confirmation,
             "withdrawals": {
                 "enabled": policy.withdrawals_enabled,
@@ -148,6 +151,7 @@ class Service:
                 "/cancel",
                 "/withdraw/preview",
                 "/withdraw/confirm",
+                "/fidelity/ticket",
             }:
                 return HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"}
             try:
@@ -157,6 +161,8 @@ class Service:
             if not isinstance(data, dict):
                 return HTTPStatus.BAD_REQUEST, {"ok": False, "error": "send a JSON object"}
             trader = self._current()
+            if path == "/fidelity/ticket":
+                return HTTPStatus.OK, {"ok": True, **trader.fidelity_ticket(data)}
             if path == "/withdraw/preview":
                 return HTTPStatus.OK, {"ok": True, **trader.withdraw_preview(data)}
             if path == "/withdraw/confirm":
