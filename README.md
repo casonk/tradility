@@ -222,3 +222,22 @@ cancel an order. Schwab reuses `TRADILITY_SCHWAB_TOKEN_COMMAND` / `TRADILITY_SCH
 Binance.US needs `TRADILITY_BINANCE_API_KEY` and `TRADILITY_BINANCE_API_SECRET`, or
 `TRADILITY_BINANCE_CREDENTIAL_COMMAND` (a command that prints `{"api_key": "...", "api_secret": "..."}`).
 Use a read-only API key. The export is owner-only and gitignored with the rest of `exports/`.
+
+## Placing orders
+
+Order placement is off until you turn it on. It is a separate local service
+(`python -m tradility.trader_service`, 127.0.0.1:8768) behind a policy file you own
+(`~/.config/tradility/trading.toml`, mode 600; see `docs/trading.example.toml`). An order needs two steps:
+
+1. **Preview** checks the order against the policy (ticker allowlist, per-order and daily dollar caps, a
+   price band around the live last price), has the broker validate it without placing it (Schwab
+   `previewOrder`, Binance.US `order/test`), and returns a single-use token valid for two minutes.
+2. **Confirm** takes the token and the exact phrase (for example `BUY AAPL`), re-checks the policy and the
+   day's total, writes the audit log, and only then sends the order. An order whose outcome is unknown after a
+   timeout counts against the daily cap and is never retried.
+
+Every step is appended to `~/.local/state/tradility/trade-audit.jsonl` (mode 600; no credential is ever written
+there). Cancelling an open order needs `CANCEL <order id>`. Limit and market orders only. Credentials come from
+hand-off commands: `TRADILITY_SCHWAB_TOKEN_COMMAND` (as for reading) and
+`TRADILITY_BINANCE_TRADE_CREDENTIAL_COMMAND`, a command printing a **separate trade-enabled, withdrawal-disabled**
+Binance.US key as `{"api_key": "...", "api_secret": "..."}`; keep the read-only key for order reading.
