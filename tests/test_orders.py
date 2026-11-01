@@ -110,6 +110,7 @@ def test_schwab_is_read_in_sixty_day_windows_for_every_account():
     windows = [u for u in urls if "/orders?" in u]
     assert len(windows) == 2 * 7  # 365 days / 60 = 7 windows per account
     assert len(got["AAPL"]) == 1
+    assert got["AAPL"][0]["account"] == "1"  # the account's last digits, so a cancel can name it
 
 
 def test_binance_requests_are_signed_read_only_and_cover_held_symbols_once():

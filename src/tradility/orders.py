@@ -153,6 +153,7 @@ def schwab_orders(raw: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
                 "price": price,
                 "date": entered,
                 "note": "",
+                **({"account": order["_account"]} if order.get("_account") else {}),
             }
         )
     return out
@@ -223,6 +224,7 @@ def fetch_schwab(
         digest = str(account.get("hashValue", ""))
         if not digest:
             continue
+        mask = str(account.get("accountNumber", ""))[-4:]
         end = now
         floor = now - timedelta(days=lookback_days)
         while end > floor:
@@ -236,7 +238,7 @@ def fetch_schwab(
             )
             page = get(f"{SCHWAB_BASE}/trader/v1/accounts/{digest}/orders?{query}", headers)
             if isinstance(page, list):
-                raw.extend(o for o in page if isinstance(o, dict))
+                raw.extend({**o, "_account": mask} for o in page if isinstance(o, dict))
             end = start
     return schwab_orders(raw)
 
