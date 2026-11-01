@@ -29,7 +29,14 @@ def test_preview_then_confirm_over_the_service_places_one_order(svc, monkeypatch
     code, pv = post(
         svc,
         "/preview",
-        {"ticker": "AAPL", "side": "buy", "kind": "limit", "quantity": 5, "price": 100},
+        {
+            "ticker": "AAPL",
+            "side": "buy",
+            "kind": "limit",
+            "quantity": 5,
+            "price": 100,
+            "account": "1234",
+        },
     )
     assert code == 200 and pv["ok"] and pv["phrase"] == "BUY AAPL"
     code, done = post(svc, "/confirm", {"preview_id": pv["preview_id"], "phrase": "BUY AAPL"})
@@ -37,7 +44,14 @@ def test_preview_then_confirm_over_the_service_places_one_order(svc, monkeypatch
 
 
 def test_requests_need_the_header_and_a_loopback_host(svc):
-    body = {"ticker": "AAPL", "side": "buy", "kind": "limit", "quantity": 1, "price": 100}
+    body = {
+        "ticker": "AAPL",
+        "side": "buy",
+        "kind": "limit",
+        "quantity": 1,
+        "price": 100,
+        "account": "1234",
+    }
     for headers in (
         {"Host": "127.0.0.1:8768"},  # no header
         {"Host": "evil.example", "X-Tradility-Trader": "1"},  # DNS rebinding
@@ -54,7 +68,14 @@ def test_requests_need_the_header_and_a_loopback_host(svc):
 
 def test_disabling_the_policy_stops_trading_without_a_restart(svc, monkeypatch):
     monkeypatch.setenv("TRADILITY_SCHWAB_ACCESS_TOKEN", "tok")
-    body = {"ticker": "AAPL", "side": "buy", "kind": "limit", "quantity": 1, "price": 100}
+    body = {
+        "ticker": "AAPL",
+        "side": "buy",
+        "kind": "limit",
+        "quantity": 1,
+        "price": 100,
+        "account": "1234",
+    }
     assert post(svc, "/preview", body)[0] == 200
     svc.state["policy"] = t.Policy()
     code, refused = post(svc, "/preview", body)
@@ -83,3 +104,25 @@ def test_bad_bodies_paths_and_policy_errors_are_refused_cleanly(svc):
 
     svc.policy_loader = broken
     assert svc.handle("POST", "/preview", GOOD, b"{}")[0] == 422
+
+
+def test_the_quote_endpoint_returns_the_mark_and_default_prices_and_status_lists_the_defaults(
+    svc, monkeypatch
+):
+    monkeypatch.setenv("TRADILITY_SCHWAB_ACCESS_TOKEN", "tok")
+    code, quote = svc.handle("GET", "/quote/AAPL", GOOD, b"")
+    assert code == 200 and quote["buy_price"] == 97.5 and quote["sell_price"] == 102.5
+    code, status = svc.handle("GET", "/status", GOOD, b"")
+    assert status["defaults"] == {
+        "kind": "limit",
+        "time_in_force": "gtc",
+        "buy_offset_pct": -2.5,
+        "sell_offset_pct": 2.5,
+    }
+    assert status["schwab_accounts"] == ["1234", "77"]
+    assert (
+        svc.handle("GET", "/quote/AAPL", {"Host": "evil.example", "X-Tradility-Trader": "1"}, b"")[
+            0
+        ]
+        == 403
+    )

@@ -46,6 +46,13 @@ class Service:
             "per_order_usd": policy.per_order_usd,
             "daily_usd": policy.daily_usd,
             "price_band_pct": policy.price_band_pct,
+            "schwab_accounts": list(policy.schwab_accounts),
+            "defaults": {
+                "kind": "limit",
+                "time_in_force": "gtc",
+                "buy_offset_pct": policy.buy_offset_pct,
+                "sell_offset_pct": policy.sell_offset_pct,
+            },
             "spent_today": self.audit.spent_today(),
         }
 
@@ -62,6 +69,11 @@ class Service:
         try:
             if method == "GET" and path == "/status":
                 return HTTPStatus.OK, {"ok": True, **self.status()}
+            if method == "GET" and path.startswith("/quote/"):
+                return HTTPStatus.OK, {
+                    "ok": True,
+                    **self._current().quote(path[len("/quote/") :]),
+                }
             if method != "POST" or path not in {"/preview", "/confirm", "/cancel"}:
                 return HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"}
             try:
@@ -85,6 +97,7 @@ class Service:
                     str(data.get("order_id", "")),
                     data.get("phrase", ""),
                     str(data.get("symbol", "")),
+                    str(data.get("account", "")),
                 ),
             }
         except t.TradingError as exc:
