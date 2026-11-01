@@ -2,11 +2,12 @@
 
 import json
 import re
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError
 
 from tradility import orders as o
+from tradility._compat import UTC
 
 NOW = datetime(2026, 11, 1, tzinfo=UTC)
 
