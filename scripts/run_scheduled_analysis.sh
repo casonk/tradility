@@ -25,7 +25,7 @@ if [[ ! -x "$python_bin" ]]; then
 fi
 
 mkdir -p "$(dirname "$output_file")"
-exec flock --nonblock "$output_file.lock" \
+flock --nonblock "$output_file.lock" \
   "$python_bin" -m tradility \
   --holdings "$holdings_file" \
   --output "$output_file" \
@@ -34,3 +34,20 @@ exec flock --nonblock "$output_file.lock" \
   --profile-cache "$profile_cache" \
   --profile-max-age-days "$profile_max_age_days" \
   --profile-workers "$profile_workers"
+
+status=$?
+if [[ $status -ne 0 ]]; then
+  exit "$status"
+fi
+
+# Read-only order history and open orders from the brokers (Schwab, Binance.US). Each source
+# needs its own credentials in the environment (see README); a missing or failing one is
+# reported on stderr and never fails the analysis above.
+orders_file="${TRADILITY_ORDERS_FILE:-$repo_root/exports/tradility-orders.json}"
+if [[ "${TRADILITY_FETCH_ORDERS:-1}" != "0" ]]; then
+  flock --nonblock "$orders_file.lock" \
+    "$python_bin" -m tradility.orders \
+    --holdings "$holdings_file" \
+    --output "$orders_file" ||
+    echo "tradility: order fetch reported a problem (analysis is unaffected)" >&2
+fi
