@@ -28,6 +28,9 @@ class Fake:
 
     def __call__(self, method, url, headers, body):
         self.calls.append((method, url, body))
+        self.content_types = getattr(self, "content_types", []) + [
+            (method, headers.get("Content-Type"))
+        ]
         if url.endswith("accountNumbers"):
             return (
                 200,
@@ -250,3 +253,14 @@ def test_the_policy_file_must_be_owner_only_and_valid(tmp_path):
     path.write_text("not = [toml")
     with pytest.raises(t.TradingError, match="unreadable"):
         t.load_policy(path)
+
+
+def test_schwab_gets_carry_no_content_type_and_posts_do(rig):
+    trader, send, *_ = rig
+    pv = trader.preview(order())
+    trader.confirm(pv["preview_id"], "BUY AAPL")
+    sent = send.content_types
+    assert ("GET", None) in sent and all(
+        ct is None for m, ct in sent if m == "GET" and ct is not None
+    ) is True
+    assert ("POST", "application/json") in sent

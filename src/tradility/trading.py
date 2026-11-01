@@ -252,8 +252,13 @@ class SchwabTrader:
     name = "schwab"
 
     def __init__(self, token: str, account_mask: str, send: Send) -> None:
-        self.headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        self.mask, self.send, self._hash = account_mask, send, ""
+        self.headers = {"Authorization": f"Bearer {token}"}
+        self.mask, self._send, self._hash = account_mask, send, ""
+
+    def send(self, method: str, url: str, headers: dict[str, str], body: bytes | None):
+        """Schwab answers 400 to a GET that declares a JSON body, so only requests with one do."""
+        sent = {**headers, "Content-Type": "application/json"} if body is not None else headers
+        return self._send(method, url, sent, body)
 
     def _account_hash(self) -> str:
         if self._hash:
