@@ -407,3 +407,41 @@ def test_statement_balances_tell_apart_accounts_that_share_digits_and_add_a_rece
     assert by["401K:401k"]["total_value"] == 172439.06 and by["401K:401k"]["holdings"] == {}
     assert not any(k.startswith("1111") for k in by)
     assert got["institutions"]["fid"]["total"] == 70672.0 + 9.0 + 172439.06
+
+
+def test_bank_accounts_come_from_the_newest_statement_and_skip_closed_and_liabilities(tmp_path):
+    invest = tmp_path / "invest"
+    invest.mkdir()
+    path = invest / "holdings-aggregate.json"
+    path.write_text("{}")
+    hunt = tmp_path / "bank" / "hunt"
+    macu = tmp_path / "bank" / "macu"
+    hunt.mkdir(parents=True)
+    macu.mkdir()
+    header = (
+        "account_name,account_mask,account_nature,period_start,period_end,ending_balance,"
+        "credits,debits,interest_paid\n"
+    )
+    (hunt / "timeseries-checking-1921.csv").write_text(
+        header
+        + "Huntington Platinum Perks Checking Account,-------1921,asset,2026-02-12,2026-03-11,7036.37,1,2,0\n"
+        + "Huntington Platinum Perks Checking Account,-------1921,asset,2026-03-12,2026-04-10,5045.65,309.13,2299.99,0.14\n"
+    )
+    (hunt / "timeseries-savings-8743.csv").write_text(
+        header
+        + "Huntington Premier Savings Account,-------8743,asset,2026-02-14,2026-03-13,513.18,0,0,0.02\n"
+    )
+    (hunt / "timeseries-standbycash-9080.csv").write_text(
+        header + "StandbyCash,***9080,liability,2022-12-08,2023-01-07,0.0,333.32,0,0\n"
+    )
+    (hunt / "timeseries-aggregate-net-position.csv").write_text("period_end,total\n2026-04-10,1\n")
+    (macu / "timeseries-mystyle-checking-id50.csv").write_text(
+        header + "MYSTYLE CHECKING,XXXXXX7852-ID50,asset,2024-07-01,2024-07-31,0.0,13.1,0,0\n"
+    )
+    got = a.bank_accounts(path)
+    assert [(x["bank"], x["type"], x["mask"], x["balance"]) for x in got] == [
+        ("Huntington", "checking", "1921", 5045.65),
+        ("Huntington", "savings", "8743", 513.18),
+    ]
+    assert got[0]["as_of"] == "2026-04-10" and got[0]["money_out"] == 2299.99
+    assert a.bank_accounts(tmp_path / "x" / "y" / "h.json") == []
