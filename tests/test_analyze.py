@@ -168,3 +168,26 @@ def test_a_ticker_record_carries_schwab_fundamentals_and_their_rating():
     assert record["fundamentals"]["pe"] == 12.0
     assert record["fundamental_rating"] == "strong_buy"
     assert analyze_module._ticker_record("AAPL", result, {}, None, None).get("fundamentals") is None
+
+
+def test_fundamentals_use_the_environment_token_like_the_price_fetch(monkeypatch):
+    seen = {}
+
+    def fake_fetch(symbols, token, *args, **kwargs):
+        seen["token"] = token
+        seen["symbols"] = symbols
+        return {"AAPL": {"asset_type": "EQUITY", "figures": {"pe": 12.0}}}
+
+    monkeypatch.setenv("TRADILITY_SCHWAB_ACCESS_TOKEN", "tok")
+    monkeypatch.setattr(analyze_module, "fetch_schwab_fundamentals", fake_fetch)
+    monkeypatch.setattr(
+        analyze_module,
+        "fetch_ohlcv",
+        lambda tickers, **kw: {
+            t: OHLCVResult(ticker=t, df=_trend_frame(), source="schwab") for t in tickers
+        },
+    )
+    payload = analyze_module.analyze_tickers(tickers=["AAPL"], source="schwab")
+    assert seen == {"token": "tok", "symbols": ["AAPL"]}
+    assert payload["fundamentals"]["found"] == 1
+    assert payload["tickers"][0]["fundamentals"] == {"pe": 12.0}

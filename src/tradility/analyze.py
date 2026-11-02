@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -300,8 +301,11 @@ def analyze_tickers(
 
     fundamentals: dict[str, dict[str, Any]] = {}
     fundamentals_summary: dict[str, Any] = {"enabled": False}
-    if include_fundamentals and (schwab_access_token or schwab_token_command):
-        resolution = resolve_access_token(schwab_access_token, schwab_token_command)
+    # the same environment fallback the price fetch uses, so the scheduled run (which passes no flags) works
+    access_token = schwab_access_token or os.environ.get("TRADILITY_SCHWAB_ACCESS_TOKEN", "")
+    token_command = schwab_token_command or os.environ.get("TRADILITY_SCHWAB_TOKEN_COMMAND", "")
+    if include_fundamentals and schwab_tickers and (access_token or token_command):
+        resolution = resolve_access_token(access_token, token_command)
         if resolution.token:
             fundamentals = fetch_schwab_fundamentals(sorted(schwab_tickers), resolution.token)
             fundamentals_summary = {
