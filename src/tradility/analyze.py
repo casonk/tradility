@@ -20,6 +20,11 @@ RSI_PERIOD = 14
 VWAP_PERIOD = 20
 SMA_SHORT_PERIOD = 50
 SMA_LONG_PERIOD = 200
+# Other windows for each indicator, computed alongside the standard one so a consumer can offer
+# them as settings (the standard RSI 14, VWAP 20 and SMA 50/200 keep their own fields).
+RSI_VARIANTS = (7, 14, 21)
+VWAP_VARIANTS = (10, 20, 50)
+SMA_VARIANTS = (20, 50, 100, 200, 300)
 RETURN_WINDOWS = {
     "1m": pd.DateOffset(months=1),
     "3m": pd.DateOffset(months=3),
@@ -151,6 +156,17 @@ def _ticker_record(
         trend_signal,
     )
 
+    variants = {
+        "rsi": {str(n): _safe_float(rsi(df["Close"], period=n).iloc[-1], 2) for n in RSI_VARIANTS},
+        "vwap": {
+            str(n): _safe_float(
+                vwap(df["High"], df["Low"], df["Close"], df["Volume"], period=n).iloc[-1], 4
+            )
+            for n in VWAP_VARIANTS
+        },
+        "sma": {str(n): _safe_float(sma(df["Close"], n).iloc[-1], 4) for n in SMA_VARIANTS},
+    }
+
     range_start = pd.Timestamp(df.index[-1]) - pd.DateOffset(years=1)
     range_frame = df.loc[df.index >= range_start]
     high_52w = _safe_float(range_frame["High"].max(), 4)
@@ -184,6 +200,7 @@ def _ticker_record(
             "high_52w": high_52w,
             "low_52w": low_52w,
             "range_position_52w": range_position,
+            "indicator_variants": variants,
             "technical_rating": technical_rating,
             "technical_score": technical_score,
             "technical_components": technical_components,
