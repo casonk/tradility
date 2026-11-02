@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Each ticker record carries `indicator_variants`: RSI over 7, 14 and 21 bars, VWAP over 10, 20 and 50, and simple moving averages over 20, 50, 100, 200 and 300 (null when the history is too short), so a consumer can offer other windows. The standard `rsi_14`, `vwap_20`, `sma_50` and `sma_200` fields are unchanged.
 - Fundamentals: a short interest of 0.0 (what Schwab reports for most names) is read as unknown rather than as a neutral rule, so it no longer dilutes the rating.
 - Fix: the scheduled run attached no fundamentals because it passes no flags and the fundamentals fetch ignored `TRADILITY_SCHWAB_ACCESS_TOKEN` / `TRADILITY_SCHWAB_TOKEN_COMMAND`, which the price fetch already reads. It now uses the same fallback.
 - Schwab fundamentals. The analysis attaches `fundamentals` (P/E, PEG, ROE, margins, growth, leverage, liquidity, coverage, yield, short interest, beta, market cap, EPS) to each company from Schwab's instruments endpoint, with `fundamental_signals` (up to ten buy/neutral/sell rules and their thresholds), `fundamental_score` and a `fundamental_rating`, separate from the technical rating. Zero from Schwab means unknown; at least four rules are needed for a rating; funds and ETFs get figures only. Needs the Schwab token already used for prices; a failing request skips fundamentals and never fails the analysis.
