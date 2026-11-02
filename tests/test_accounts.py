@@ -364,3 +364,46 @@ def test_statement_accounts_take_a_later_balance_from_the_series_next_to_the_exp
     assert one["total_value"] == 17969.06 and one["as_of"] == "2026-10-31"
     assert one["holdings"]["VTI"]["market_value"] == 31500.0
     assert got["institutions"]["fid"]["total"] == 17969.06
+
+
+def test_statement_balances_tell_apart_accounts_that_share_digits_and_add_a_recent_one(tmp_path):
+    def acct(subtype, value):
+        return {
+            "institution": "fid",
+            "account_mask": "***7866",
+            "account_subtype": subtype,
+            "ending_value": value,
+            "quantity": 1,
+            "period_end": "2026-02-28",
+        }
+
+    path = tmp_path / "h.json"
+    path.write_text(
+        json.dumps(
+            {
+                "holdings": [
+                    {"ticker": "VTI", "accounts": [acct("bl-trad", 50000.0), acct("hsa", 9.0)]}
+                ]
+            }
+        )
+    )
+    (tmp_path / "fid").mkdir()
+    (tmp_path / "fid" / "timeseries-fidelity-brokeragelink-traditional-7866.csv").write_text(
+        "account_name,account_mask,period_end,ending_balance\n"
+        "Fidelity BrokerageLink Traditional,***7866,2026-10-31,70672.0\n"
+    )
+    (tmp_path / "fid" / "timeseries-fidelity-401-k-401k.csv").write_text(
+        "account_name,account_mask,period_end,ending_balance\n"
+        "Fidelity 401(k),***401K,2026-02-28,110642.28\n"
+        "Fidelity 401(k),***401K,2026-10-29,172439.06\n"
+    )
+    (tmp_path / "fid" / "timeseries-fidelity-old-1111.csv").write_text(
+        "account_name,account_mask,period_end,ending_balance\nFidelity Individual,***1111,2025-01-31,5.0\n"
+    )
+    got = a.statement_accounts(path)
+    by = {x["key"]: x for x in got["accounts"]}
+    assert by["7866:bl-trad"]["total_value"] == 70672.0
+    assert by["7866:hsa"]["total_value"] == 9.0
+    assert by["401K:401k"]["total_value"] == 172439.06 and by["401K:401k"]["holdings"] == {}
+    assert not any(k.startswith("1111") for k in by)
+    assert got["institutions"]["fid"]["total"] == 70672.0 + 9.0 + 172439.06

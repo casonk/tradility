@@ -245,29 +245,85 @@ def statement_accounts(path: Any) -> dict[str, Any]:
     return {"institutions": institutions, "holdings": holdings, "accounts": list(accounts.values())}
 
 
+_SERIES_NAME_TOKENS = {
+    "hsa": ("hsa", "health"),
+    "bl-trad": ("traditional",),
+    "bl-roth": ("roth",),
+    "individ": ("individual",),
+    "401k": ("401",),
+    "crypto": ("crypto",),
+}
+# a series that no position row names is still an account worth counting if it is this recent
+_NEW_ACCOUNT_WINDOW_DAYS = 120
+
+
+def _series_subtype(name: str) -> str:
+    lowered = name.lower()
+    for subtype, tokens in _SERIES_NAME_TOKENS.items():
+        if any(token in lowered for token in tokens):
+            return subtype
+    return ""
+
+
 def _apply_latest_balances(base: Any, accounts: dict, institutions: dict) -> None:
     """Newer statements can carry only balances (PDFs, no position rows). The pipeline writes a
     per-account series next to the holdings export (`fid/timeseries-<institution>-*.csv`); where
-    it reaches a later period than the position rows, its ending balance replaces the total."""
+    it reaches a later period than the position rows, its ending balance replaces the total, and a
+    recent account the position rows never mention (a 401(k), crypto) is added without positions.
+    An account is matched by its last digits and its type, since two accounts can share digits."""
     import csv
+    from datetime import date, timedelta
 
-    for (code, _), one in accounts.items():
-        latest = ("", 0.0)
+    for code in {code for code, _ in accounts}:
+        latest: dict[tuple[str, str], tuple[str, float, str]] = {}
         for series in sorted(base.glob(f"{code}/timeseries-*.csv")):
             try:
                 with series.open(encoding="utf-8", newline="") as fh:
                     for row in csv.DictReader(fh):
                         mask = str(row.get("account_mask", "")).replace("*", "")[-4:]
+                        name = str(row.get("account_name", ""))
+                        key = (mask, _series_subtype(f"{name} {series.name}"))
                         end = str(row.get("period_end", ""))
-                        if mask == one["id"] and end > latest[0]:
-                            latest = (end, _num(row.get("ending_balance")) or 0.0)
+                        if end > latest.get(key, ("", 0.0, ""))[0]:
+                            latest[key] = (end, _num(row.get("ending_balance")) or 0.0, name)
             except (OSError, csv.Error):
                 continue
-        if latest[0] > one["as_of"]:
-            row = institutions[code]
-            row["total"] += latest[1] - one["total_value"]
-            row["as_of"] = max(row["as_of"], latest[0])
-            one["total_value"], one["as_of"] = latest[1], latest[0]
+        row = institutions[code]
+        newest = max((one["as_of"] for (c, _), one in accounts.items() if c == code), default="")
+        for (mask, subtype), (end, balance, name) in latest.items():
+            ours = [
+                one
+                for (c, _), one in accounts.items()
+                if c == code and one["id"] == mask and (not subtype or one["type"] == subtype)
+            ]
+            if ours:
+                for one in ours:
+                    if end > one["as_of"]:
+                        row["total"] += balance - one["total_value"]
+                        row["as_of"] = max(row["as_of"], end)
+                        one["total_value"], one["as_of"] = balance, end
+                continue
+            try:
+                recent = date.fromisoformat(end) >= date.fromisoformat(newest) - timedelta(
+                    days=_NEW_ACCOUNT_WINDOW_DAYS
+                )
+            except ValueError:
+                recent = False
+            if recent and balance > 0:
+                accounts[(code, f"{mask}|{subtype}")] = {
+                    "broker": INSTITUTION_NAMES.get(code, code).lower().replace(" ", ""),
+                    "id": mask,
+                    "key": f"{mask}:{subtype}",
+                    "label": f"{INSTITUTION_NAMES.get(code, code.upper())} …{mask}",
+                    "name": name,
+                    "type": subtype,
+                    "total_value": balance,
+                    "as_of": end,
+                    "holdings": {},
+                    "statement": True,
+                }
+                row["total"] += balance
+                row["as_of"] = max(row["as_of"], end)
 
 
 def collect(get: GetJson = http_get_json, env: dict[str, str] | None = None) -> dict[str, Any]:
