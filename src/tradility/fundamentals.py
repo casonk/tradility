@@ -39,8 +39,9 @@ FIGURES: tuple[tuple[str, str, str, str], ...] = (
     ("market_cap", "marketCap", "Market cap", "$"),
     ("eps_ttm", "epsTTM", "EPS (TTM)", "$"),
 )
-# a zero here is a real value (a company can pay no dividend, owe no debt or have no short interest)
-ZERO_IS_REAL = {"dividend_yield", "short_float", "debt_to_equity", "rev_growth", "eps_growth"}
+# a zero here is a real value (a company can pay no dividend or owe no debt); Schwab reports 0.0
+# short interest for most names, so that one is read as unknown
+ZERO_IS_REAL = {"dividend_yield", "debt_to_equity", "rev_growth", "eps_growth"}
 
 
 def _num(value: Any) -> float | None:
