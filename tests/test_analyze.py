@@ -191,3 +191,15 @@ def test_fundamentals_use_the_environment_token_like_the_price_fetch(monkeypatch
     assert seen == {"token": "tok", "symbols": ["AAPL"]}
     assert payload["fundamentals"]["found"] == 1
     assert payload["tickers"][0]["fundamentals"] == {"pe": 12.0}
+
+
+def test_a_ticker_record_carries_indicator_variants_matching_the_standard_fields():
+    result = OHLCVResult(ticker="AAPL", df=_trend_frame(), source="schwab")
+    record = analyze_module._ticker_record("AAPL", result, {})
+    variants = record["indicator_variants"]
+    assert set(variants) == {"rsi", "vwap", "sma"}
+    assert variants["rsi"]["14"] == record["rsi_14"]
+    assert variants["vwap"]["20"] == record["vwap_20"]
+    assert variants["sma"]["50"] == record["sma_50"] and variants["sma"]["200"] == record["sma_200"]
+    assert set(variants["rsi"]) == {"7", "14", "21"}
+    assert variants["sma"]["300"] is None  # 260 bars are too few for a 300-day average
