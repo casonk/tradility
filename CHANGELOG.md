@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- `GET /accounts` lists `banks`: checking, savings and money-market accounts from the finance pipeline's bank statements (`exports/bank/<bank>/timeseries-*.csv`, beside the investment export), each with its newest statement's balance, date, and that period's money in, money out and interest. Only the last digits are kept; closed accounts and liabilities are left out; balances are as of the statement date. They are not part of the investment position totals.
 - Each ticker record carries `indicator_variants`: RSI over 7, 14 and 21 bars, VWAP over 10, 20 and 50, and simple moving averages over 20, 50, 100, 200 and 300 (null when the history is too short), so a consumer can offer other windows. The standard `rsi_14`, `vwap_20`, `sma_50` and `sma_200` fields are unchanged.
 - Fundamentals: a short interest of 0.0 (what Schwab reports for most names) is read as unknown rather than as a neutral rule, so it no longer dilutes the rating.
 - Fix: the scheduled run attached no fundamentals because it passes no flags and the fundamentals fetch ignored `TRADILITY_SCHWAB_ACCESS_TOKEN` / `TRADILITY_SCHWAB_TOKEN_COMMAND`, which the price fetch already reads. It now uses the same fallback.
