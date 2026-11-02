@@ -328,3 +328,39 @@ def test_statement_accounts_are_listed_one_by_one_with_their_holdings(tmp_path):
         one["holdings"]["VTI"] == {"quantity": 3.0, "market_value": 600.0}
         and one["as_of"] == "2026-02-28"
     )
+
+
+def test_statement_accounts_take_a_later_balance_from_the_series_next_to_the_export(tmp_path):
+    path = tmp_path / "h.json"
+    path.write_text(
+        json.dumps(
+            {
+                "holdings": [
+                    {
+                        "ticker": "VTI",
+                        "accounts": [
+                            {
+                                "institution": "fid",
+                                "account_mask": "***9422",
+                                "account_subtype": "hsa",
+                                "ending_value": 31500.0,
+                                "quantity": 3,
+                                "period_end": "2026-02-28",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+    )
+    (tmp_path / "fid").mkdir()
+    (tmp_path / "fid" / "timeseries-fidelity-hsa-9422.csv").write_text(
+        "account_name,account_mask,period_end,ending_balance\n"
+        "HSA,***9422,2026-09-30,18147.89\n"
+        "HSA,***9422,2026-10-31,17969.06\n"
+    )
+    got = a.statement_accounts(path)
+    one = got["accounts"][0]
+    assert one["total_value"] == 17969.06 and one["as_of"] == "2026-10-31"
+    assert one["holdings"]["VTI"]["market_value"] == 31500.0
+    assert got["institutions"]["fid"]["total"] == 17969.06
