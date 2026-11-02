@@ -241,7 +241,33 @@ def statement_accounts(path: Any) -> dict[str, Any]:
                 slot["market_value"] += value
     if not institutions:
         return {}
+    _apply_latest_balances(Path(str(path)).parent, accounts, institutions)
     return {"institutions": institutions, "holdings": holdings, "accounts": list(accounts.values())}
+
+
+def _apply_latest_balances(base: Any, accounts: dict, institutions: dict) -> None:
+    """Newer statements can carry only balances (PDFs, no position rows). The pipeline writes a
+    per-account series next to the holdings export (`fid/timeseries-<institution>-*.csv`); where
+    it reaches a later period than the position rows, its ending balance replaces the total."""
+    import csv
+
+    for (code, _), one in accounts.items():
+        latest = ("", 0.0)
+        for series in sorted(base.glob(f"{code}/timeseries-*.csv")):
+            try:
+                with series.open(encoding="utf-8", newline="") as fh:
+                    for row in csv.DictReader(fh):
+                        mask = str(row.get("account_mask", "")).replace("*", "")[-4:]
+                        end = str(row.get("period_end", ""))
+                        if mask == one["id"] and end > latest[0]:
+                            latest = (end, _num(row.get("ending_balance")) or 0.0)
+            except (OSError, csv.Error):
+                continue
+        if latest[0] > one["as_of"]:
+            row = institutions[code]
+            row["total"] += latest[1] - one["total_value"]
+            row["as_of"] = max(row["as_of"], latest[0])
+            one["total_value"], one["as_of"] = latest[1], latest[0]
 
 
 def collect(get: GetJson = http_get_json, env: dict[str, str] | None = None) -> dict[str, Any]:
