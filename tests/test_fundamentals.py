@@ -77,3 +77,9 @@ def test_fetch_reads_chunks_and_survives_a_failing_one():
     got = fu.fetch_schwab_fundamentals(symbols, "t", get)
     assert len(calls) == 2 and set(got) == {"AAA"}
     assert got["AAA"]["figures"] == {"pe": 10.0}
+
+
+def test_a_zero_short_interest_is_unknown_not_a_neutral_rule():
+    assert "short_float" not in fu.normalize({"shortIntToFloat": 0.0, "beta": 1.0})
+    keys = {r["key"] for r in fu.signals(fu.normalize({**STRONG, "shortIntToFloat": 0.0}))}
+    assert "short_float" not in keys
