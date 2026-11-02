@@ -18,3 +18,9 @@ REFS-LOCAL.md
 .vscode/
 .idea/
 *.swp
+
+# coverage output
+coverage.xml
+.coverage
+.coverage.*
+htmlcov/
