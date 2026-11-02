@@ -150,3 +150,21 @@ def test_technical_rating_is_a_transparent_component_sum(
     assert actual_rating == rating
     assert actual_score == score
     assert sum(components.values()) == score
+
+
+def test_a_ticker_record_carries_schwab_fundamentals_and_their_rating():
+    result = OHLCVResult(ticker="AAPL", df=_trend_frame(), source="schwab")
+    entry = {
+        "asset_type": "EQUITY",
+        "figures": {
+            "pe": 12.0,
+            "roe": 22.0,
+            "net_margin": 20.0,
+            "rev_growth": 15.0,
+            "current_ratio": 2.0,
+        },
+    }
+    record = analyze_module._ticker_record("AAPL", result, {}, None, entry)
+    assert record["fundamentals"]["pe"] == 12.0
+    assert record["fundamental_rating"] == "strong_buy"
+    assert analyze_module._ticker_record("AAPL", result, {}, None, None).get("fundamentals") is None

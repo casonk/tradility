@@ -170,6 +170,15 @@ the rolling 20-day VWAP contributes ±1 as momentum, and oversold/overbought RSI
 contributes ±1 as a mean-reversion signal. The component values are serialized
 in `technical_components` so consumers can explain the label.
 
+With a Schwab token configured, each company also carries `fundamentals` (about fifteen figures from
+Schwab's `instruments?projection=fundamental`: P/E, PEG, return on equity, margins, growth, leverage,
+liquidity, coverage, dividend yield, short interest, beta, market cap and EPS) and a separate
+`fundamental_rating` built from up to ten transparent rules, listed with their thresholds in
+`fundamental_signals`. A figure Schwab reports as 0.0 is treated as unknown, so a bank's missing
+current ratio does not count against it, and the rating needs at least four rules to apply. Funds and
+ETFs get the figures but no signals, since their aggregates mean something different. The fundamental
+rating is its own read: it is never mixed into `technical_rating`, and neither is advice.
+
 ### Qualitative profiles
 
 The CLI enables qualitative profiles by default and stores normalized public

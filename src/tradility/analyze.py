@@ -10,8 +10,10 @@ from typing import Any
 import pandas as pd
 
 from tradility.fetch import OHLCVResult, fetch_ohlcv, normalize_history_period
+from tradility.fundamentals import fetch_schwab_fundamentals, record_fields
 from tradility.indicators import long_term_trend_signal, rsi, rsi_signal, sma, vwap, vwap_signal
 from tradility.profiles import load_company_profiles
+from tradility.sources.schwab import resolve_access_token
 
 RSI_PERIOD = 14
 VWAP_PERIOD = 20
@@ -105,6 +107,7 @@ def _ticker_record(
     result: OHLCVResult,
     meta: dict[str, str],
     profile: dict[str, Any] | None = None,
+    fundamentals: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     base: dict[str, Any] = {
         "ticker": ticker,
@@ -116,6 +119,9 @@ def _ticker_record(
         base["company_profile"] = profile
         if not base["name"] and profile.get("canonical_name"):
             base["name"] = profile["canonical_name"]
+
+    if fundamentals:
+        base.update(record_fields(fundamentals))
 
     if not result.ok:
         base["fetch_status"] = "error"
@@ -233,6 +239,7 @@ def analyze_tickers(
     profile_cache_path: Path | None = None,
     profile_max_age_days: int = 30,
     profile_workers: int = 4,
+    include_fundamentals: bool = True,
 ) -> dict[str, Any]:
     """Run full analysis pipeline.
 
@@ -291,10 +298,27 @@ def analyze_tickers(
             "errors": profile_result.errors,
         }
 
+    fundamentals: dict[str, dict[str, Any]] = {}
+    fundamentals_summary: dict[str, Any] = {"enabled": False}
+    if include_fundamentals and (schwab_access_token or schwab_token_command):
+        resolution = resolve_access_token(schwab_access_token, schwab_token_command)
+        if resolution.token:
+            fundamentals = fetch_schwab_fundamentals(sorted(schwab_tickers), resolution.token)
+            fundamentals_summary = {
+                "enabled": True,
+                "source": "schwab",
+                "requested": len(schwab_tickers),
+                "found": len(fundamentals),
+            }
+        else:
+            fundamentals_summary = {"enabled": False, "error": resolution.error}
+
     records = []
     for yf_ticker, meta in meta_by_ticker.items():
         result = ohlcv.get(yf_ticker, OHLCVResult(ticker=yf_ticker, error="not fetched"))
-        rec = _ticker_record(yf_ticker, result, meta, profiles.get(yf_ticker))
+        rec = _ticker_record(
+            yf_ticker, result, meta, profiles.get(yf_ticker), fundamentals.get(yf_ticker)
+        )
         # Restore original ticker label for crypto (strip -USD suffix in output)
         rec["ticker"] = meta.get("original_ticker", yf_ticker) or yf_ticker
         records.append(rec)
@@ -322,5 +346,6 @@ def analyze_tickers(
         "fetch_ok": ok_count,
         "fetch_errors": err_count,
         "company_profiles": profile_summary,
+        "fundamentals": fundamentals_summary,
         "tickers": records,
     }
