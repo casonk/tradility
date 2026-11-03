@@ -68,13 +68,6 @@ class Service:
         path = os.environ.get("TRADILITY_HOLDINGS_FILE", "")
         return accounts_module.statement_accounts(path) if path else {}
 
-    def _banks(self) -> list[dict[str, Any]]:
-        """Bank accounts from the finance pipeline's statements, when a holdings export is set."""
-        import os
-
-        path = os.environ.get("TRADILITY_HOLDINGS_FILE", "")
-        return accounts_module.bank_accounts(path) if path else []
-
     def accounts(self) -> dict[str, Any]:
         """Read-only account details for the page (holdings are only used to size an order)."""
         data = self._cached_accounts()
@@ -82,7 +75,6 @@ class Service:
         return {
             **data,
             "statements": list((other.get("institutions") or {}).values()),
-            "banks": self._banks(),
             "accounts": [
                 {k: v for k, v in a.items() if k != "holdings"} for a in data.get("accounts", [])
             ],
