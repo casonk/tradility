@@ -33,12 +33,15 @@ Changelog = "https://github.com/casonk/tradility/blob/main/CHANGELOG.md"
 
 [project.scripts]
 tradility = "tradility.cli:main"
+tradility-web = "tradility.web:main"
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
     "dyno-lab>=0.3.0",
+    "flask>=3.0",
 ]
+web = ["flask>=3.0"]
 
 [tool.black]
 line-length = 100
@@ -66,3 +69,6 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+tradility = ["templates/*.html", "static/*.css"]

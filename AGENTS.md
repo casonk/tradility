@@ -2,10 +2,11 @@
 
 ## Purpose
 
-`tradility` is a Python package that computes technical indicators (RSI, VWAP) on investment
-ticker holdings and watchlists. It reads ticker lists from a finance pipeline's
+`tradility` is a standalone Python analytics and trading application that computes technical
+indicators (RSI, VWAP) on investment ticker holdings and watchlists. It reads ticker lists from a finance pipeline's
 `holdings-aggregate.json` export or from an explicit CLI argument, fetches OHLCV price data via
-**yfinance**, and outputs a structured `tradility-analysis.json`.
+**yfinance** or Schwab, outputs a structured `tradility-analysis.json`, and ships its own optional
+loopback web UI. Portfolio portals such as Clockwork are integrations, not runtime dependencies.
 
 ## Portfolio Standards
 
@@ -35,6 +36,10 @@ src/tradility/
   fetch.py          — yfinance OHLCV download wrapper
   indicators.py     — RSI and VWAP calculations
   analyze.py        — orchestration: load → fetch → compute → serialize
+  web.py            — standalone loopback web application and domain APIs
+  web_state.py      — owner-only manual order state and broker-export merge
+  templates/        — packaged Tradility dashboard
+  static/           — packaged standalone theme assets
 tests/
   test_indicators.py
 exports/            — gitignored; runtime JSON output lives here
@@ -69,8 +74,8 @@ user shares the result.
 
 ## Architecture Notes
 
-- `fetch.py` is the only module that makes network calls. Keep it isolated so indicators and
-  analyze are fully testable offline.
+- Market/provider calls stay in their domain adapters. The web application reads local artifacts
+  and may proxy only to Tradility's loopback trader service, preserving its credential boundary.
 - Crypto tickers from Binance use bare symbols (`BTC`). `analyze.py` maps them to Yahoo Finance
   format (`BTC-USD`) for fetching and restores the original symbol in JSON output.
 - `exports/` is gitignored. Never commit generated analysis JSON.

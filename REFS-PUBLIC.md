@@ -7,6 +7,7 @@
 ## Public Repositories
 
 - https://github.com/ranaroussi/yfinance — primary OHLCV data source; MIT license
+- https://github.com/pallets/flask — optional standalone web application framework; BSD-3-Clause
 
 ## Public Datasets and APIs
 
@@ -17,6 +18,7 @@
 ## Documentation and Specifications
 
 - https://pandas.pydata.org/docs/ — DataFrame and Series operations used throughout
+- https://flask.palletsprojects.com/ — standalone web application and testing APIs
 - https://school.stockcharts.com/doku.php?id=technical_indicators:relative_strength_index_rsi — RSI definition
 - https://school.stockcharts.com/doku.php?id=technical_indicators:vwap_intraday — VWAP definition
 

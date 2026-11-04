@@ -15,6 +15,11 @@ Unlike `CHATHISTORY.md`, this file should keep only reusable lessons that should
 
 ## Lessons
 
+- Keep the standalone web process on local artifacts and a narrow loopback
+  proxy to the credential-holding trader service. Package the templates and
+  default theme with the `web` extra, bind loopback by default, require CSRF
+  for browser mutations, and treat portfolio navigation, targets, finances,
+  and scheduling as optional provider integrations.
 - Document the repository around its real execution, curation, or integration flow instead of only the top-level folder list.
 - Keep local-only, private, reference-only, or generated boundaries explicit so published or runtime behavior is not confused with offline material or non-committable inputs.
 - Keep tracked examples, fixtures, and `.example` templates scrubbed of real paths, usernames, hostnames, account identifiers, or other instance-specific values; real operator data belongs only in gitignored local config.
