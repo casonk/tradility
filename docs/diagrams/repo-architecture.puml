@@ -7,6 +7,9 @@ package "tradility" {
   [fetch.py] as Fetch
   [sources/schwab.py] as Schwab
   [indicators.py] as Indicators
+  [web.py] as Web
+  [web_state.py] as WebState
+  [trader_service.py] as Trader
   [run_scheduled_analysis.sh] as Scheduled
 }
 
@@ -14,7 +17,8 @@ database "holdings-aggregate.json" as Holdings
 database "tradility-analysis.json" as Output
 cloud "yfinance / Yahoo Finance" as YF
 cloud "Schwab Trader API" as SchwabAPI
-component "Clockwork timer" as Clockwork
+actor "Standalone user" as User
+component "Optional portfolio portal / scheduler" as Portal
 component "token command" as TokenCommand
 
 CLI --> Analyze : analyze_tickers()
@@ -26,7 +30,12 @@ Schwab --> SchwabAPI : price history
 Schwab --> TokenCommand : short-lived access token
 Analyze --> Indicators : rsi(), vwap(), sma()
 Analyze --> Output : write JSON
-Clockwork --> Scheduled : weekdays after close
+User --> Web : loopback browser
+Web --> Output : bounded list / exact detail
+Web --> WebState : manual orders
+Web --> Trader : loopback proxy
+Portal ..> Web : optional link / reverse proxy
+Portal ..> Scheduled : optional schedule
 Scheduled --> CLI
 
 @enduml

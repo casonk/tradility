@@ -1,0 +1,2882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1, user-scalable=yes">
+  <title>Tradility</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root { --surface3: color-mix(in srgb, var(--bg) 50%, var(--surface)); --muted-fg: var(--muted); }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: var(--font-size);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .standalone-nav {
+      min-height: 42px; padding: 8px 20px; display: flex; align-items: center;
+      justify-content: space-between; gap: 12px; background: var(--surface2);
+      border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted-fg);
+    }
+    .standalone-nav a { color: var(--text); font-weight: 700; text-decoration: none; }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-title { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; flex: 1; }
+    .header-meta { font-size: 11px; color: var(--muted-fg); white-space: nowrap; }
+    .header-meta.stale { color: var(--red); font-weight: 700; }
+
+    /* ── Controls ── */
+    .controls {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .controls-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.7px; color: var(--muted-fg); white-space: nowrap;
+    }
+    .indicator-group {
+      display: flex; flex: 1 1 320px; flex-wrap: wrap; gap: 4px;
+      min-width: 0; max-width: 100%;
+    }
+    .ind-row { display: flex; justify-content: space-between; gap: 8px; }
+    .ind-btn {
+      padding: 5px 14px; border-radius: 99px; border: 1px solid var(--border);
+      background: var(--surface2); color: var(--muted-fg);
+      font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+    }
+    .ind-btn.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+    .ind-btn:hover:not(.active) { border-color: var(--muted-fg); color: var(--text); }
+    /* strength: weak is dashed and quiet, strong is solid and bold; the tag spells it out */
+    .ind-btn.lvl-weak { border-style: dashed; opacity: 0.8; }
+    .ind-btn.lvl-strong { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+    .ind-settings { position: relative; }
+    .ind-settings > summary {
+      list-style: none; cursor: pointer; padding: 5px 12px; border-radius: 99px;
+      border: 1px solid var(--border); background: var(--surface2); color: var(--muted-fg);
+      font-size: 12px; font-weight: 600;
+    }
+    .ind-settings > summary::-webkit-details-marker { display: none; }
+    .ind-settings[open] > summary { color: var(--accent); border-color: var(--accent); }
+    .ind-settings-body {
+      position: absolute; z-index: 60; top: calc(100% + 6px); left: 0; width: min(420px, 92vw);
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.35); padding: 12px 14px; display: grid; gap: 12px;
+    }
+    .ind-set { display: grid; gap: 6px; }
+    .ind-set h4 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted-fg); }
+    .ind-set-row { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; }
+    .ind-set-row label { display: inline-flex; gap: 5px; align-items: center; color: var(--text); }
+    .ind-set select {
+      background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: 3px 6px; font-size: 12px;
+    }
+    .ind-set-reset {
+      justify-self: start; padding: 4px 12px; border-radius: 99px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--surface2); color: var(--muted-fg); font-size: 12px;
+    }
+    .ind-set-reset:hover { color: var(--text); border-color: var(--muted-fg); }
+    .ind-tag { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 5px; }
+    .ind-tag:empty { display: none; }
+
+    .filter-group { display: flex; gap: 4px; flex-wrap: wrap; }
+    .filter-btn {
+      padding: 4px 10px; border-radius: 99px; border: 1px solid var(--border);
+      background: transparent; color: var(--muted-fg);
+      font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+    }
+    .filter-btn.active { background: var(--surface2); color: var(--text); border-color: var(--muted-fg); }
+    .filter-btn:hover:not(.active) { border-color: var(--muted-fg); }
+
+    .sort-select {
+      padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border);
+      background: var(--surface2); color: var(--text);
+      font-size: 12px; cursor: pointer; outline: none;
+    }
+    .sort-select:focus { border-color: var(--accent); }
+
+    .search-input {
+      padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border);
+      background: var(--surface2); color: var(--text);
+      font-size: 12px; outline: none; width: 130px; transition: width 0.2s;
+    }
+    .search-input:focus { border-color: var(--accent); width: 200px; }
+    .search-input::placeholder { color: var(--muted-fg); }
+
+    .refresh-btn {
+      margin-left: auto; display: flex; align-items: center; gap: 5px;
+      padding: 5px 12px; border-radius: 7px; border: 1px solid var(--border);
+      background: var(--surface2); color: var(--muted-fg);
+      font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+    }
+    .refresh-btn:hover { color: var(--text); border-color: var(--muted-fg); }
+    .refresh-btn + .refresh-btn { margin-left: 0; }
+    .refresh-btn.spinning .refresh-icon { animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .refresh-icon { display: inline-block; }
+
+    /* ── Gradient legend ── */
+    .legend {
+      padding: 10px 20px 8px;
+      background: var(--surface3);
+      border-bottom: 1px solid var(--border);
+    }
+    .legend-scale { position: relative; }
+    .legend-bar {
+      height: 8px; border-radius: 4px; width: 100%; max-width: 340px;
+    }
+    .legend-ticks {
+      display: flex; justify-content: space-between;
+      max-width: 340px; margin-top: 3px;
+      font-size: 10px; color: var(--muted-fg);
+    }
+    .legend-labels {
+      display: flex; justify-content: space-between;
+      max-width: 340px; margin-top: 1px;
+      font-size: 10px; font-weight: 700;
+    }
+    .legend-lbl-buy  { color: var(--green); }
+    .legend-lbl-mid  { color: var(--yellow); }
+    .legend-lbl-sell { color: var(--red); }
+    .legend-no-data {
+      margin-top: 6px; display: flex; align-items: center; gap: 6px;
+      font-size: 10px; color: var(--muted-fg);
+    }
+    .legend-no-data-swatch {
+      width: 28px; height: 8px; border-radius: 4px;
+      background: var(--surface2); border: 1px solid var(--border);
+    }
+
+    /* ── Stats bar ── */
+    .stats-bar {
+      display: flex; gap: 16px; padding: 6px 20px;
+      background: var(--surface3); border-bottom: 1px solid var(--border);
+      flex-wrap: wrap; align-items: center;
+    }
+    .stat { font-size: 11px; color: var(--muted-fg); }
+    .stat strong { font-weight: 700; }
+
+    /* ── Grid ── */
+    main { padding: 14px 20px 80px; }
+
+    .ticker-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+      gap: 8px;
+    }
+
+    /* Cards use only inline styles for color; only structural rules here */
+    .ticker-card {
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: transform 0.12s, box-shadow 0.12s;
+      position: relative;
+      overflow: hidden;
+      width: 100%; text-align: left; font: inherit; color: inherit;
+      appearance: none; background: var(--surface);
+    }
+    .ticker-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+    }
+    .ticker-card.no-data { background: var(--surface); opacity: 0.55; }
+    .ticker-card:disabled { cursor: default; }
+    .ticker-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .card-ticker {
+      font-family: var(--mono);
+      font-size: 15px; font-weight: 700; letter-spacing: 0.5px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      padding-right: 46px;
+    }
+    .card-asset {
+      font-size: 10px; color: var(--muted-fg); margin-bottom: 5px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .card-price { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+
+    .card-indicator {
+      font-size: 11px; display: flex; align-items: center;
+      justify-content: space-between; margin-top: 3px;
+    }
+    .card-ind-label { color: var(--muted-fg); }
+    .card-ind-value { font-weight: 700; font-family: var(--mono); font-size: 11px; }
+
+    /* Signal badge — colored inline */
+    .signal-badge {
+      position: absolute; top: 8px; right: 8px;
+      font-size: 9px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase;
+      padding: 2px 6px; border-radius: 4px; border: 1px solid transparent;
+    }
+
+    /* RSI progress bar */
+    .rsi-bar-wrap {
+      margin-top: 7px; height: 4px; border-radius: 2px; overflow: hidden;
+      background: color-mix(in srgb, var(--text) 8%, transparent);
+      position: relative;
+    }
+    .rsi-bar-fill { height: 100%; border-radius: 2px; }
+    /* Zone markers at 30% and 70% */
+    .rsi-bar-wrap::before,
+    .rsi-bar-wrap::after {
+      content: ''; position: absolute; top: 0; bottom: 0; width: 1px;
+      background: color-mix(in srgb, var(--text) 18%, transparent);
+    }
+    .rsi-bar-wrap::before { left: 30%; }
+    .rsi-bar-wrap::after  { left: 70%; }
+
+    /* VWAP delta */
+    .vwap-delta { font-size: 10px; font-weight: 600; margin-top: 4px; }
+    .card-detail-cue { margin-top: 7px; font-size: 9px; color: var(--muted-fg); }
+
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    /* ── Stock detail dialog ── */
+    body.detail-open { overflow: hidden; }
+    /* The detail view fills the window below the top bar (--detail-top is the bar's bottom edge, set from
+       the page), so the bar and its theme controls stay available. It sits under the bar (z-index 300)
+       so the bar's menus open over it. */
+    .detail-overlay {
+      position: fixed; left: 0; right: 0; bottom: 0; top: var(--detail-top, 0px); z-index: 250;
+      background: var(--bg); padding: 0; display: block;
+    }
+    .detail-overlay[hidden] { display: none; }
+    .detail-panel {
+      width: 100%; height: 100%; overflow: auto; box-sizing: border-box;
+      background: var(--surface); border: 0; border-top: 1px solid var(--border); border-radius: 0;
+      box-shadow: none; padding: 20px clamp(16px, 3vw, 44px);
+    }
+    .detail-layout { max-width: 1700px; margin: 0 auto; }
+    /* a detail opened in its own window shows nothing but the detail (and the top bar) */
+    body.popout header, body.popout .controls, body.popout .accounts-panel, body.popout .stats-bar,
+    body.popout main, body.popout #detail-popout, body.popout .detail-close { display: none; }
+    .detail-header { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
+    .detail-title { flex: 1; min-width: 0; }
+    .detail-ticker { font: 800 24px var(--mono); letter-spacing: 0.6px; }
+    .detail-name { color: var(--muted-fg); font-size: 12px; }
+    .detail-price { font-size: 22px; font-weight: 750; white-space: nowrap; }
+    .accounts-panel { margin: 8px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+    .accounts-panel > summary { cursor: pointer; padding: 8px 12px; font-weight: 700; font-size: 13px; }
+    .accounts-total { color: var(--muted-fg); font-weight: 500; margin-left: 8px; }
+    .accounts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; padding: 0 12px 12px; }
+    .account-card { border: 1px solid var(--border); border-radius: 9px; padding: 10px; background: var(--surface2); font-size: 12px; }
+    .account-card h4 { margin: 0 0 6px; font-size: 13px; display: flex; justify-content: space-between; gap: 8px; }
+    .account-card dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; }
+    .account-card dt { color: var(--muted-fg); }
+    .account-card dd { margin: 0; text-align: right; font-family: var(--mono); }
+    .account-flag { font-size: 10px; border: 1px solid var(--border); border-radius: 99px; padding: 0 7px; color: var(--muted-fg); }
+    .account-flag.warn { border-color: var(--red); color: var(--red); }
+    .account-warning { grid-column: 1 / -1; color: var(--red); font-size: 11px; margin-top: 6px; }
+    .trade-box { border: 1px solid var(--border); border-radius: 9px; padding: 10px; margin-top: 10px; }
+    .impact-table { margin: 6px 0 4px; }
+    .trade-box h4 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted-fg); }
+    .trade-box .trade-warn { color: var(--red); font-size: 11px; }
+    .trade-box input[type=text] { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font-size: 12px; width: 150px; }
+    .trade-box button { border: 1px solid var(--border); background: var(--surface2); color: var(--text); border-radius: 6px; padding: 3px 9px; cursor: pointer; font-size: 11px; margin-right: 4px; }
+    .trade-box button.primary { border-color: var(--accent); color: var(--accent); }
+    .template-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 2px; }
+    .template-chips button { border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 99px; padding: 2px 10px; font-size: 11px; cursor: pointer; }
+    .template-chips button.buy { border-color: color-mix(in srgb, var(--green) 60%, var(--border)); }
+    .template-chips button.sell { border-color: color-mix(in srgb, var(--red) 60%, var(--border)); }
+    .template-chips button.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+    .order-effect { font-size: 11px; min-width: 190px; }
+    /* share bars: the fill is what you hold now, the lighter segment is the change an order makes,
+       and the ink tick is the To Invest target. One hue and ink, so it reads in every theme. */
+    .sbar { display: block; margin-top: 4px; }
+    .sbar-track { display: block; position: relative; height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--border) 55%, transparent); overflow: hidden; }
+    .sbar-now, .sbar-move { position: absolute; top: 0; bottom: 0; }
+    .sbar-now { left: 0; background: var(--accent); border-radius: 0 4px 4px 0; }
+    .sbar-move.up { background: color-mix(in srgb, var(--accent) 38%, var(--surface)); border-radius: 0 4px 4px 0; border-left: 2px solid var(--surface); }
+    .sbar-move.down { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, var(--surface)) 0 2px, transparent 2px 4px); border-radius: 0 4px 4px 0; border-left: 2px solid var(--surface); }
+    .sbar-target { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text); }
+    .sbar-big .sbar-track { height: 14px; border-radius: 7px; }
+    .sbar-big .sbar-now, .sbar-big .sbar-move { border-radius: 0 7px 7px 0; }
+    .sbar-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 10px; color: var(--muted-fg); margin-top: 4px; }
+    .sbar-legend i { display: inline-block; width: 10px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+    .sbar-legend i.k-now { background: var(--accent); }
+    .sbar-legend i.k-up { background: color-mix(in srgb, var(--accent) 38%, var(--surface)); }
+    .sbar-legend i.k-target { width: 2px; background: var(--text); border-radius: 0; }
+    .card-target { font-size: 10px; margin-top: 3px; color: var(--muted-fg); }
+    .card-target.under { color: var(--accent); }
+    .card-target.over { color: var(--red); }
+    .target-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+    .target-form input, .target-form select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font-size: 11px; max-width: 130px; }
+    .target-form button { border: 1px solid var(--border); background: var(--surface2); color: var(--text); border-radius: 6px; padding: 3px 9px; cursor: pointer; font-size: 11px; }
+    #detail-target-card { order: 3; }
+    .orders-sync { color: var(--muted-fg); font-size: 11px; margin: 4px 0 8px; }
+    .orders-summary { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-bottom: 10px; font-size: 12px; }
+    .orders-summary span { color: var(--muted-fg); }
+    .orders-summary strong { color: var(--text); margin-left: 4px; }
+    .orders-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 10px; }
+    .orders-table th { text-align: left; color: var(--muted-fg); font-weight: 700; padding: 3px 6px; }
+    .orders-table td { padding: 3px 6px; border-top: 1px solid var(--border); }
+    .orders-table .num { text-align: right; font-family: var(--mono); }
+    .order-open td:first-child { box-shadow: inset 3px 0 var(--accent); }
+    .order-actions button, .order-form button {
+      border: 1px solid var(--border); background: var(--surface2); color: var(--text);
+      border-radius: 6px; padding: 2px 7px; cursor: pointer; font-size: 11px; margin-right: 3px;
+    }
+    .order-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .order-form select, .order-form input {
+      background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: 3px 6px; font-size: 11px; max-width: 120px;
+    }
+    .order-form input[name=note] { max-width: 200px; }
+    .order-error { color: var(--red); font-size: 11px; min-height: 14px; margin-top: 4px; }
+    .detail-step {
+      border: 1px solid var(--border); background: var(--surface2); color: var(--text);
+      border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 18px;
+    }
+    .detail-step:disabled { opacity: 0.35; cursor: default; }
+    .detail-pos { align-self: center; color: var(--muted-fg); font-size: 11px; white-space: nowrap; }
+    .detail-close {
+      border: 1px solid var(--border); background: var(--surface2); color: var(--text);
+      border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 18px;
+    }
+    /* Full screen (in place) and Pop out (its own window) are separate options on the detail and on its chart */
+    body.detail-fs .detail-overlay { top: 0; z-index: 400; }
+    .detail-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .chart-actions { display: flex; gap: 6px; margin-bottom: 9px; }
+    .chart-actions .detail-step { width: 30px; height: 30px; font-size: 15px; }
+    .chart-fs-close { display: none; }
+    .detail-card.chart-fs { position: fixed; left: 0; right: 0; bottom: 0; top: var(--detail-top, 0px); z-index: 450; margin: 0;
+      border-radius: 0; overflow: auto; padding: 16px clamp(12px, 3vw, 40px); background: var(--surface); }
+    body.detail-fs .detail-card.chart-fs { top: 0; }
+    .detail-card.chart-fs .chart-fs-close { display: inline-flex; align-items: center; justify-content: center; }
+    .detail-card.chart-fs .chart-open { display: none; }
+    .detail-card.chart-fs .detail-chart-wrap { height: calc(100vh - var(--detail-top, 0px) - 170px); min-height: 260px; }
+    body.popout .chart-actions, body.popout #detail-fs { display: none; }
+    /* a chart opened in its own window shows only that chart (under the ticker header) */
+    body.popout-chart #detail-content .detail-card:not(#detail-chart-card) { display: none; }
+    body.popout-chart .detail-layout { grid-template-columns: minmax(0, 1fr); }
+    body.popout-chart .detail-chart-wrap { height: calc(100vh - 250px); min-height: 280px; }
+    .detail-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(240px, 1fr); gap: 16px; }
+    .detail-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 11px; padding: 14px; }
+    .detail-card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted-fg); font-weight: 750; margin-bottom: 9px; }
+    .detail-range-buttons { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+    .detail-range-btn {
+      border: 1px solid var(--border); background: transparent; color: var(--muted-fg);
+      border-radius: 99px; padding: 3px 10px; cursor: pointer; font-size: 11px; font-weight: 700;
+    }
+    .detail-range-btn.active { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+    .detail-chart-wrap { position: relative; height: clamp(280px, 40vh, 560px); }
+    #detail-chart { width: 100%; height: 100%; display: block; }
+    .detail-chart-summary { display: flex; justify-content: space-between; gap: 12px; color: var(--muted-fg); font-size: 11px; margin-top: 5px; }
+    .detail-rating { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .detail-rating-label { font-size: 22px; font-weight: 800; }
+    .rating-positive { color: var(--green); }
+    .rating-negative { color: var(--red); }
+    .rating-neutral { color: var(--yellow); }
+    .detail-disclaimer { color: var(--muted-fg); font-size: 10px; margin-top: 6px; }
+    .company-description { font-size: 12px; line-height: 1.6; margin: 0; color: var(--text); }
+    .company-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin-top: 12px; }
+    .company-fact { min-width: 0; }
+    .company-fact span { display: block; color: var(--muted-fg); font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .company-fact strong { display: block; font-size: 11px; margin-top: 2px; overflow-wrap: anywhere; }
+    .company-links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; }
+    .company-link { display: inline-block; color: var(--accent); font-size: 11px; text-decoration: none; }
+    .company-link:hover { text-decoration: underline; }
+    .component-list { display: grid; gap: 6px; margin-top: 12px; }
+    .component-row, .detail-meta-row { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; }
+    .component-row span:first-child, .detail-meta-row span:first-child { color: var(--muted-fg); }
+    .return-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+    .return-cell { text-align: center; background: var(--surface3); border-radius: 7px; padding: 7px 3px; }
+    .return-label { display: block; color: var(--muted-fg); font-size: 9px; text-transform: uppercase; }
+    .return-value { display: block; font: 700 12px var(--mono); margin-top: 2px; }
+    .range-track { height: 7px; background: var(--surface3); border-radius: 99px; position: relative; margin: 14px 0 5px; }
+    .range-marker { position: absolute; top: -4px; width: 3px; height: 15px; background: var(--accent); border-radius: 2px; transform: translateX(-50%); }
+    .range-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted-fg); }
+    /* minmax(0, 1fr) and min-width: 0 let a card shrink to the stack; an auto track would grow to the
+       widest thing in it (a wide table, the order form) and push the whole stack off a narrow screen */
+    .detail-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
+    .detail-card { min-width: 0; }
+    #detail-orders-card { order: 2; }  /* the chart comes first, then the position and orders */
+    .detail-loading { padding: 70px 20px; text-align: center; color: var(--muted-fg); }
+    @media (max-width: 720px) {
+      .detail-overlay { padding: 0; place-items: stretch; }
+      .detail-panel { max-height: 100vh; width: 100%; border-radius: 0; padding: 15px; }
+      /* minmax(0, 1fr): a plain 1fr lets a wide table stretch the column past the screen, which the
+         phone answers by zooming the page; the tables scroll inside themselves instead */
+      .detail-layout { grid-template-columns: minmax(0, 1fr); }
+      .detail-chart-wrap { height: 260px; }
+      .detail-header { flex-wrap: wrap; gap: 8px; }
+      .detail-title { flex-basis: 100%; }
+      .orders-table { display: block; overflow-x: auto; max-width: 100%; }
+      .order-effect { min-width: 0; }
+      .order-form select, .order-form input, .order-form input[name=note],
+      .target-form input, .target-form select, .trade-box input[type=text] { max-width: 100%; }
+      /* 16px stops iOS zooming into a field on focus, and keeps the zoom after it */
+      input, select, textarea { font-size: 16px !important; }
+      .order-form button, .target-form button, .trade-box button, .template-chips button,
+      .order-actions button, .detail-range-btn { min-height: 36px; font-size: 13px; }
+      .return-grid { grid-template-columns: repeat(3, 1fr); }
+      .company-facts { grid-template-columns: 1fr; }
+    }
+
+    /* State messages */
+    .state-msg { text-align: center; color: var(--muted-fg); padding: 60px 24px; font-size: 14px; }
+    .error-card {
+      border-radius: 9px; border: 1px solid var(--border);
+      background: var(--surface); padding: 16px;
+      font-size: 13px; margin-bottom: 12px; color: var(--red);
+    }
+  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
+</head>
+<body>
+<nav class="standalone-nav" aria-label="Application navigation">
+  <a href="/">📈 Tradility</a>
+  <span>Standalone web application</span>
+</nav>
+
+<header>
+  <span class="header-title">📈 Tradility</span>
+  <span class="header-meta" id="meta-generated"></span>
+</header>
+
+<div class="controls">
+  <span class="controls-label" title="Select one or more. Several are combined into one joint buy probability.">Indicators</span>
+  <div class="indicator-group" role="group" aria-label="Indicators (select several to combine them)">
+    <button class="ind-btn active" data-ind="rsi"  aria-pressed="true" onclick="toggleIndicator('rsi')"><span class="ind-name">RSI 14</span><span class="ind-tag"></span></button>
+    <button class="ind-btn" data-ind="vwap"  aria-pressed="false" onclick="toggleIndicator('vwap')"><span class="ind-name">VWAP 20</span><span class="ind-tag"></span></button>
+    <button class="ind-btn" data-ind="trend"  aria-pressed="false" onclick="toggleIndicator('trend')"><span class="ind-name">Trend 50/200</span><span class="ind-tag"></span></button>
+    <button class="ind-btn" data-ind="fund"  aria-pressed="false" onclick="toggleIndicator('fund')" title="Schwab fundamentals: valuation, profitability, growth, balance sheet"><span class="ind-name">Fundamentals</span><span class="ind-tag"></span></button>
+  </div>
+
+  <details class="ind-settings" id="ind-settings">
+    <summary title="Choose what each indicator measures">⚙ Settings</summary>
+    <div class="ind-settings-body" id="ind-settings-body"></div>
+  </details>
+
+  <span class="controls-label" style="margin-left:6px">Class</span>
+  <div class="filter-group" id="class-filters"></div>
+
+  <input class="search-input" id="search-input" type="text"
+         placeholder="Search ticker…" oninput="renderGrid()">
+
+  <select class="sort-select" id="sort-select" onchange="renderGrid()">
+    <option value="value-asc">Sort: value ↑ (buy first)</option>
+    <option value="value-desc">Sort: value ↓ (sell first)</option>
+    <option value="ticker">Sort: ticker A–Z</option>
+    <option value="price-desc">Sort: price ↓</option>
+    <option value="target-gap">Sort: furthest below target</option>
+  </select>
+
+  <button class="refresh-btn" id="refresh-btn" onclick="runRefresh()">
+    <span class="refresh-icon">↻</span>
+    <span id="refresh-label">Update market data</span>
+  </button>
+</div>
+
+<div class="legend">
+  <div class="legend-scale">
+    <canvas class="legend-bar" id="legend-bar" height="8"></canvas>
+    <div class="legend-ticks" id="legend-ticks"></div>
+    <div class="legend-labels">
+      <span class="legend-lbl-buy"  id="legend-lbl-buy"></span>
+      <span class="legend-lbl-mid"  id="legend-lbl-mid"></span>
+      <span class="legend-lbl-sell" id="legend-lbl-sell"></span>
+    </div>
+  </div>
+  <div class="legend-no-data">
+    <div class="legend-no-data-swatch"></div>
+    No data / fetch error
+  </div>
+</div>
+
+<details class="accounts-panel" id="accounts-panel">
+  <summary>Accounts <span class="accounts-total" id="accounts-total"></span></summary>
+  <div id="accounts-body"><div class="state-msg">Open to load your account details.</div></div>
+</details>
+<div class="stats-bar" id="stats-bar"></div>
+
+<main>
+  <div id="grid-container"><div class="state-msg">Loading…</div></div>
+</main>
+
+<div class="detail-overlay" id="detail-overlay" hidden
+     role="dialog" aria-modal="true" aria-labelledby="detail-dialog-title">
+  <section class="detail-panel" id="detail-panel">
+    <div class="detail-header">
+      <div class="detail-title">
+        <div class="detail-ticker" id="detail-dialog-title">Stock details</div>
+        <div class="detail-name" id="detail-dialog-name"></div>
+      </div>
+      <div class="detail-price" id="detail-dialog-price"></div>
+      <span class="detail-pos" id="detail-pos"></span>
+      <button class="detail-step" id="detail-prev" type="button" onclick="stepTickerDetail(-1)" aria-label="Previous ticker" title="Previous (←)">‹</button>
+      <button class="detail-step" id="detail-next" type="button" onclick="stepTickerDetail(1)" aria-label="Next ticker" title="Next (→)">›</button>
+      <button class="detail-step" id="detail-fs" type="button" onclick="toggleDetailFullScreen()" aria-label="Full screen" title="Full screen (Esc to leave)">⛶</button>
+      <button class="detail-step" id="detail-popout" type="button" onclick="popOutDetail()" aria-label="Open in its own window" title="Open in its own window (resizable, keeps the top bar and theme)">⧉</button>
+      <button class="detail-close" type="button" onclick="closeTickerDetail()" aria-label="Close details">×</button>
+    </div>
+    <div id="detail-content"><div class="detail-loading">Loading company and market details…</div></div>
+  </section>
+</div>
+
+<script>
+  // ── matplotlib RdYlGn colormap (11 stops, t=0 → red, t=1 → green) ─────────
+  const RDYLGN = [
+    [165,   0,  38],
+    [215,  48,  39],
+    [244, 109,  67],
+    [253, 174,  97],
+    [254, 224, 139],
+    [255, 255, 191],
+    [217, 239, 139],
+    [166, 217, 106],
+    [102, 189,  99],
+    [ 26, 152,  80],
+    [  0, 104,  55],
+  ];
+
+  function rdylgn(t) {
+    t = Math.max(0, Math.min(1, t));
+    const n   = RDYLGN.length - 1;
+    const pos = t * n;
+    const lo  = Math.floor(pos);
+    const hi  = Math.min(n, lo + 1);
+    const f   = pos - lo;
+    return [
+      Math.round(RDYLGN[lo][0] + (RDYLGN[hi][0] - RDYLGN[lo][0]) * f),
+      Math.round(RDYLGN[lo][1] + (RDYLGN[hi][1] - RDYLGN[lo][1]) * f),
+      Math.round(RDYLGN[lo][2] + (RDYLGN[hi][2] - RDYLGN[lo][2]) * f),
+    ];
+  }
+
+  // ── Indicator settings ──────────────────────────────────────────────────────
+  // What each indicator measures, chosen from the Settings panel and kept in this browser. The
+  // server computes the alternative windows (indicator_variants), so a setting only picks one.
+  const DEFAULT_SETTINGS = {
+    rsi:   { period: 14, buy: 30, sell: 70 },          // window, and the oversold / overbought bands
+    vwap:  { window: 20, band: 3 },                     // window, and how far from VWAP is decisive (%)
+    trend: { short: 50, long: 200, gap: 5 },           // the two averages, and a decisive gap (%)
+    fund:  { groups: ['valuation', 'profitability', 'growth', 'balance', 'short'], agree: 50 },
+  };
+  const FUND_GROUPS = {
+    valuation: ['pe', 'peg'], profitability: ['roe', 'net_margin'], growth: ['rev_growth', 'eps_growth'],
+    balance: ['debt_to_equity', 'current_ratio', 'interest_coverage'], short: ['short_float'],
+  };
+  let settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+
+  // The value of a window the server computed; the standard windows also have their own fields.
+  const STANDARD_FIELD = { rsi: { 14: 'rsi_14' }, vwap: { 20: 'vwap_20' }, sma: { 50: 'sma_50', 200: 'sma_200' } };
+  function variant(ticker, kind, n) {
+    const found = ticker.indicator_variants && ticker.indicator_variants[kind]
+      ? ticker.indicator_variants[kind][String(n)] : undefined;
+    if (found != null) return found;
+    const field = STANDARD_FIELD[kind] && STANDARD_FIELD[kind][n];
+    return field && ticker[field] != null ? ticker[field] : null;
+  }
+  const rsiValue  = t => variant(t, 'rsi', settings.rsi.period);
+  const vwapValue = t => variant(t, 'vwap', settings.vwap.window);
+  function trendRead(t) {
+    const a = variant(t, 'sma', settings.trend.short), b = variant(t, 'sma', settings.trend.long);
+    const price = t.last_price;
+    if (a == null || b == null || price == null) {
+      const standard = settings.trend.short === 50 && settings.trend.long === 200;
+      return standard && t.long_term_trend && t.long_term_trend !== 'unknown' ? t.long_term_trend : null;
+    }
+    if (a > b && price > b) return 'bullish';
+    if (a < b && price < b) return 'bearish';
+    return 'mixed';
+  }
+  // The fundamental rules in the chosen groups: {score, n}, or null when too few apply.
+  function fundRead(t) {
+    const rules = t.fundamental_signals;
+    if (Array.isArray(rules)) {
+      const keys = new Set(settings.fund.groups.flatMap(g => FUND_GROUPS[g] || []));
+      const picked = rules.filter(r => keys.has(r.key));
+      const all = settings.fund.groups.length === Object.keys(FUND_GROUPS).length;
+      if (!picked.length || (all && t.fundamental_rating === 'unavailable') || (!all && picked.length < 2)) return null;
+      return { score: picked.reduce((sum, r) => sum + (r.score ?? (r.signal === 'buy' ? 1 : r.signal === 'sell' ? -1 : 0)), 0), n: picked.length };
+    }
+    const n = t.fundamental_signal_count;
+    if (!n || t.fundamental_rating === 'unavailable' || t.fundamental_score == null) return null;
+    return { score: t.fundamental_score, n };
+  }
+
+  // The rating word for a chosen set of fundamental rules, on the same scale as the server's.
+  function fundRating(read) {
+    const ratio = read.score / read.n;
+    return ratio >= 0.5 ? 'strong_buy' : ratio >= 0.2 ? 'buy' : ratio <= -0.5 ? 'strong_sell' : ratio <= -0.2 ? 'sell' : 'hold';
+  }
+  const indName = ind => ind === 'rsi' ? `RSI ${settings.rsi.period}`
+    : ind === 'vwap' ? `VWAP ${settings.vwap.window}`
+    : ind === 'trend' ? `Trend ${settings.trend.short}/${settings.trend.long}` : 'Fundamentals';
+
+  // Each indicator reads as a probability that the ticker is a buy: t=1 buy/green, t=0 sell/red
+  // (inverse of the raw colormap for RSI/VWAP). null means the indicator has no value.
+  function signalT(ticker, ind) {
+    if (ticker.fetch_status === 'error') return null;
+    if (ind === 'rsi') {
+      const v = rsiValue(ticker);
+      if (v == null) return null;
+      return 1 - v / 100;                      // RSI 0→t=1 (green), RSI 100→t=0 (red)
+    } else if (ind === 'vwap') {
+      const p = ticker.last_price, v = vwapValue(ticker);
+      if (p == null || v == null || v === 0) return null;
+      const d = (p - v) / v;                   // % above/below VWAP
+      return Math.max(0, Math.min(1, 0.5 - d / 0.6));  // ±30% mapped to [0,1]
+    }
+    if (ind === 'fund') {
+      // the share of fundamental rules that lean one way, held to 0.1–0.9 like the other reads
+      const read = fundRead(ticker);
+      if (!read) return null;
+      return 0.5 + 0.4 * Math.max(-1, Math.min(1, read.score / read.n));
+    }
+    const read = trendRead(ticker);
+    if (read === 'bullish') return 0.85;
+    if (read === 'bearish') return 0.15;
+    if (read === 'mixed') return 0.5;
+    return null;
+  }
+
+  // Joint buy probability of the selected indicators, treated as independent evidence with an
+  // even prior: P = Πp / (Πp + Π(1-p)). A neutral 0.5 changes nothing; agreeing indicators
+  // reinforce each other and opposing ones cancel. Each p is held off 0 and 1 so one extreme
+  // reading cannot settle the answer alone. Indicators with no value are left out; the card says
+  // how many of the selected indicators contributed.
+  //
+  // An indicator also has a strength, cycled from its button. A weak one counts for half as much
+  // (its probability is raised to the power 0.5); a strong one counts double (power 2) and speaks
+  // only on a decisive reading, so a middling reading is left at an even 0.5. Normal is the plain
+  // read above. `levels` maps an indicator to 'weak' | 'normal' | 'strong' (default normal).
+  const P_FLOOR = 0.02;
+  const LEVEL_WEIGHT = { weak: 0.5, normal: 1, strong: 2 };
+  const LEVELS = ['weak', 'normal', 'strong'];
+  function decisive(ticker, ind) {
+    if (ind === 'rsi') {
+      const v = rsiValue(ticker);
+      return v <= settings.rsi.buy || v >= settings.rsi.sell;
+    }
+    if (ind === 'vwap') {
+      const v = vwapValue(ticker);
+      return Math.abs((ticker.last_price - v) / v) >= settings.vwap.band / 100;
+    }
+    if (ind === 'fund') {
+      const read = fundRead(ticker);
+      return Math.abs(read.score / read.n) >= settings.fund.agree / 100;
+    }
+    const a = variant(ticker, 'sma', settings.trend.short), b = variant(ticker, 'sma', settings.trend.long);
+    if (a != null && b) return Math.abs((a - b) / b) >= settings.trend.gap / 100;   // gap between the averages
+    const read = trendRead(ticker);
+    return read === 'bullish' || read === 'bearish';
+  }
+  function strengthT(ticker, ind, level) {
+    const p = signalT(ticker, ind);
+    if (p === null || level !== 'strong') return p;
+    return decisive(ticker, ind) ? p : 0.5;
+  }
+  function jointT(ticker, inds, levels) {
+    let buy = 1, sell = 1, used = 0;
+    for (const ind of inds) {
+      const level = (levels && levels[ind]) || 'normal';
+      const p = strengthT(ticker, ind, level);
+      if (p === null) continue;
+      const q = Math.max(P_FLOOR, Math.min(1 - P_FLOOR, p));
+      const w = LEVEL_WEIGHT[level] || 1;
+      buy *= Math.pow(q, w); sell *= Math.pow(1 - q, w); used++;
+    }
+    return used ? { t: buy / (buy + sell), used } : null;
+  }
+
+  function colormapT(ticker) {
+    const joint = jointT(ticker, [...activeIndicators], indicatorLevels);
+    return joint ? joint.t : null;
+  }
+
+  // Compute all inline color values for one card
+  function cardPalette(t) {
+    if (t === null) return null;
+    const [r, g, b] = rdylgn(t);
+    const rgb = `rgb(${r},${g},${b})`;
+    return {
+      bg:     `linear-gradient(135deg, color-mix(in srgb, ${rgb} 28%, var(--bg)) 0%, color-mix(in srgb, ${rgb} 15%, var(--bg)) 100%)`,
+      border: `rgba(${r},${g},${b},0.42)`,
+      fg:     `color-mix(in srgb, ${rgb} 75%, var(--text))`,
+      fgDim:  `rgba(${r},${g},${b},0.55)`,
+      fill:   `rgb(${r},${g},${b})`,
+    };
+  }
+
+  // ── Legend gradient bar (canvas, left=green buy, right=red sell) ────────────
+  function paintLegend() {
+    const canvas = document.getElementById('legend-bar');
+    const ctx    = canvas.getContext('2d');
+    const W      = canvas.offsetWidth || 340;
+    canvas.width = W * devicePixelRatio;
+    canvas.height = 8 * devicePixelRatio;
+    ctx.scale(devicePixelRatio, devicePixelRatio);
+    const grad = ctx.createLinearGradient(0, 0, W, 0);
+    // left=green (t=1), right=red (t=0) — reverse the stops
+    for (let i = 0; i <= 10; i++) {
+      const [r, g, b] = RDYLGN[10 - i];
+      grad.addColorStop(i / 10, `rgb(${r},${g},${b})`);
+    }
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(0, 0, W, 8, 4);
+    ctx.fill();
+
+    // Labels and ticks
+    if (activeIndicators.size > 1) {
+      document.getElementById('legend-ticks').innerHTML =
+        '<span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span>';
+      document.getElementById('legend-lbl-buy').textContent  = 'Joint buy probability high';
+      document.getElementById('legend-lbl-mid').textContent  = 'Even';
+      document.getElementById('legend-lbl-sell').textContent = 'Joint buy probability low';
+    } else if (activeIndicator() === 'rsi') {
+      document.getElementById('legend-ticks').innerHTML =
+        `<span>0</span><span>${settings.rsi.buy}</span><span>50</span><span>${settings.rsi.sell}</span><span>100</span>`;
+      document.getElementById('legend-lbl-buy').textContent  = 'Oversold (buy)';
+      document.getElementById('legend-lbl-mid').textContent  = 'Neutral';
+      document.getElementById('legend-lbl-sell').textContent = 'Overbought (sell)';
+    } else if (activeIndicator() === 'vwap') {
+      document.getElementById('legend-ticks').innerHTML =
+        '<span>−30%</span><span>−15%</span><span>0%</span><span>+15%</span><span>+30%</span>';
+      document.getElementById('legend-lbl-buy').textContent  = `Below VWAP ${settings.vwap.window} (buy)`;
+      document.getElementById('legend-lbl-mid').textContent  = 'At VWAP';
+      document.getElementById('legend-lbl-sell').textContent = 'Above VWAP (sell)';
+    } else if (activeIndicator() === 'fund') {
+      document.getElementById('legend-ticks').innerHTML =
+        '<span>Strong</span><span></span><span>Mixed</span><span></span><span>Weak</span>';
+      document.getElementById('legend-lbl-buy').textContent  = 'Fundamentals favour a buy';
+      document.getElementById('legend-lbl-mid').textContent  = 'Mixed';
+      document.getElementById('legend-lbl-sell').textContent = 'Fundamentals favour a sell';
+    } else {
+      document.getElementById('legend-ticks').innerHTML =
+        '<span>Bullish</span><span></span><span>Mixed</span><span></span><span>Bearish</span>';
+      document.getElementById('legend-lbl-buy').textContent  = `${settings.trend.short}-day above ${settings.trend.long}-day`;
+      document.getElementById('legend-lbl-mid').textContent  = 'Mixed';
+      document.getElementById('legend-lbl-sell').textContent = `${settings.trend.short}-day below ${settings.trend.long}-day`;
+    }
+  }
+
+  // ── State ───────────────────────────────────────────────────────────────────
+  let allTickers    = [];
+  let activeIndicators = new Set(['rsi']);
+  let indicatorLevels  = {};   // indicator -> 'weak' | 'normal' | 'strong' (absent means normal)
+  const activeIndicator = () => [...activeIndicators][0];
+  let activeClasses   = new Set(['all']);
+  let allClasses      = [];
+  let csrfToken       = '';
+  let detailRecord    = null;
+  // One chart range for every card: changing it on one chart changes all of them, and it is
+  // remembered in this browser.
+  const RANGES = ['1m', '3m', '1y', '3y', '5y'];
+  const RANGE_KEY = 'tradility-detail-range';
+  let detailRange = (() => {
+    try { const v = localStorage.getItem(RANGE_KEY); if (RANGES.includes(v)) return v; } catch (e) {}
+    return '5y';
+  })();
+  let detailTrigger   = null;
+  let detailTicker    = null;
+  let targetsData     = null;   // To Invest targets and current allocations, by ticker
+  let tradeStatus     = null;   // {available, enabled, tickers, per_order_usd, ...} from the trader service
+  let tradeStep       = null;   // the preview or cancel awaiting its typed confirmation
+  let detailOrders    = null;   // {position, orders} for the open card, from /api/tradility-orders
+  let shownOrder      = [];   // tickers with details, in the order the grid shows them
+  let artifactVersion = '';
+  let refreshWatch    = null;
+
+  const REFRESH_POLL_INTERVAL_MS = 5000;
+  const REFRESH_START_GRACE_MS = 30000;
+  const REFRESH_TIMEOUT_MS = 15 * 60 * 1000;
+
+  function delay(ms) {
+    return new Promise(resolve => window.setTimeout(resolve, ms));
+  }
+
+  function formatElapsed(milliseconds) {
+    const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
+  function setRefreshControl(running, label = 'Update market data') {
+    const btn = document.getElementById('refresh-btn');
+    document.getElementById('refresh-label').textContent = label;
+    btn.disabled = running;
+    btn.classList.toggle('spinning', running);
+  }
+
+  function applyAnalysisData(data) {
+    csrfToken = data.csrf_token || csrfToken;
+    artifactVersion = data.artifact_version || '';
+    allTickers = data.tickers || [];
+    if (data.generated_at) {
+      const d = new Date(data.generated_at);
+      const meta = document.getElementById('meta-generated');
+      const stale = Boolean(data.freshness && data.freshness.stale);
+      meta.textContent = `${stale ? '⚠ Stale — ' : ''}Updated ${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+      meta.classList.toggle('stale', stale);
+    }
+    const classSet = new Set();
+    for (const t of allTickers) if (t.asset_class) classSet.add(t.asset_class);
+    allClasses = [...classSet].sort();
+    buildClassFilters();
+    renderGrid();
+  }
+
+  // ── Data load ────────────────────────────────────────────────────────────────
+  // ── To Invest targets ────────────────────────────────────────────────────────
+  async function loadTargets() {
+    try {
+      const res = await fetch('/api/tradility-targets', {cache: 'no-store'});
+      const data = await res.json();
+      if (res.ok && data.ok) targetsData = data;
+    } catch (err) {
+      /* targets are an extra; the cards work without them */
+    }
+  }
+
+  function targetFor(ticker) {
+    return (targetsData && targetsData.targets && targetsData.targets[ticker]) || null;
+  }
+
+  // How far below its To Invest target a holding is, in percentage points (negative: above it).
+  function targetGap(ticker) {
+    const r = targetFor(ticker);
+    return r && r.target != null ? r.target - (r.current || 0) : null;
+  }
+
+  function pctPlain(v) {
+    return v == null ? '—' : Number(v).toFixed(2) + '%';
+  }
+
+  // A horizontal share bar. `now` is the fill, `after` (optional) adds a lighter segment for an order's
+  // change (hatched when it shrinks the holding), and `target` is an ink tick. With a target the scale puts
+  // the tick at 75% of the width, so bars are comparable as "progress to target"; `max` overrides that
+  // (used where bars sit side by side in one table). Text and a tooltip carry the exact numbers.
+  function shareBar(now, after, target, {max = null, big = false} = {}) {
+    const hasAfter = after != null && Math.abs(after - now) > 1e-9;
+    const top = Math.max(now || 0, after == null ? 0 : after, target || 0);
+    const scale = max || (target ? Math.max(target / 0.75, top * 1.05) : Math.max(top * 1.2, 0.01));
+    const w = v => Math.max(0, Math.min(100, (v || 0) / scale * 100));
+    const lo = Math.min(now || 0, hasAfter ? after : now || 0), hi = Math.max(now || 0, hasAfter ? after : now || 0);
+    const label = `Now ${pctPlain(now)}${hasAfter ? `, after ${pctPlain(after)}` : ''}${target != null ? `, target ${pctPlain(target)}` : ''}`;
+    return `<span class="sbar${big ? ' sbar-big' : ''}" role="img" aria-label="${esc(label)}" title="${esc(label)}"><span class="sbar-track">
+      <span class="sbar-now" style="width:${w(hasAfter && after < now ? after : now).toFixed(2)}%"></span>
+      ${hasAfter ? `<span class="sbar-move ${after > now ? 'up' : 'down'}" style="left:${w(lo).toFixed(2)}%;width:${(w(hi) - w(lo)).toFixed(2)}%"></span>` : ''}
+      ${target != null ? `<span class="sbar-target" style="left:calc(${w(target).toFixed(2)}% - 1px)"></span>` : ''}
+    </span></span>`;
+  }
+
+  function barLegend(withMove) {
+    return `<div class="sbar-legend"><span><i class="k-now"></i>now</span>${withMove ? '<span><i class="k-up"></i>change from open orders</span>' : ''}<span><i class="k-target"></i>To Invest target</span></div>`;
+  }
+
+  function targetChip(ticker) {
+    const r = targetFor(ticker);
+    if (!r || r.target == null) return '';
+    const gap = targetGap(ticker);
+    const kind = gap > 0.05 ? 'under' : gap < -0.05 ? 'over' : 'on';
+    const now = r.current == null ? 'not held' : `now ${pctPlain(r.current)}`;
+    return `<div class="card-target ${kind}" title="To Invest: ${esc(r.category)}">Target ${pctPlain(r.target)} · ${now}${shareBar(r.current || 0, null, r.target)}</div>`;
+  }
+
+  async function loadData({followActiveRefresh = true} = {}) {
+    let data = null;
+    try {
+      const res  = await fetch('/api/tradility-analysis', {cache: 'no-store'});
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Unknown error');
+      await loadTargets();
+      applyAnalysisData(data);
+      if (followActiveRefresh && data.refresh && data.refresh.active) {
+        void watchRefresh(artifactVersion, true);
+      }
+    } catch (err) {
+      document.getElementById('grid-container').innerHTML =
+        `<div class="error-card">⚠ Could not load analysis: ${esc(err.message)}</div>`;
+    }
+    return data;
+  }
+
+  async function runRefresh() {
+    if (refreshWatch) return refreshWatch;
+    setRefreshControl(true, 'Starting update…');
+    try {
+      if (!csrfToken) {
+        const loaded = await loadData({followActiveRefresh: false});
+        if (!loaded || !csrfToken) throw new Error('Could not load refresh credentials');
+      }
+      const baselineVersion = artifactVersion;
+      const res = await fetch('/api/tradility-refresh', {
+        method: 'POST',
+        headers: {'X-CSRF-Token': csrfToken},
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      return watchRefresh(baselineVersion, false);
+    } catch (err) {
+      showRefreshError(err);
+      setRefreshControl(false);
+      return null;
+    }
+  }
+
+  function watchRefresh(baselineVersion, alreadyActive) {
+    if (refreshWatch) return refreshWatch;
+    refreshWatch = monitorRefresh(baselineVersion, alreadyActive)
+      .catch(showRefreshError)
+      .finally(() => {
+        refreshWatch = null;
+        setRefreshControl(false);
+      });
+    return refreshWatch;
+  }
+
+  async function monitorRefresh(baselineVersion, alreadyActive) {
+    const startedAt = Date.now();
+    let seenActive = alreadyActive;
+    let consecutiveErrors = 0;
+    while (Date.now() - startedAt < REFRESH_TIMEOUT_MS) {
+      const elapsed = Date.now() - startedAt;
+      setRefreshControl(true, `Updating… ${formatElapsed(elapsed)}`);
+      const meta = document.getElementById('meta-generated');
+      meta.textContent = `Updating market data… ${formatElapsed(elapsed)}`;
+      meta.classList.remove('stale');
+
+      let status;
+      try {
+        const res = await fetch('/api/tradility-refresh/status', {cache: 'no-store'});
+        status = await res.json();
+        if (!res.ok || !status.ok) throw new Error(status.error || `HTTP ${res.status}`);
+        consecutiveErrors = 0;
+      } catch (err) {
+        consecutiveErrors += 1;
+        if (consecutiveErrors >= 3) throw err;
+        await delay(REFRESH_POLL_INTERVAL_MS);
+        continue;
+      }
+
+      const active = Boolean(status.refresh && status.refresh.active);
+      seenActive = seenActive || active;
+      if (status.artifact_version && status.artifact_version !== baselineVersion) {
+        const loaded = await loadData({followActiveRefresh: false});
+        if (!loaded) throw new Error('New market data was written but could not be loaded');
+        return;
+      }
+      if (!active && seenActive) {
+        throw new Error('Update finished, but no new market-data artifact was written');
+      }
+      if (!active && !seenActive && elapsed >= REFRESH_START_GRACE_MS) {
+        throw new Error('The market-data update did not start');
+      }
+      await delay(REFRESH_POLL_INTERVAL_MS);
+    }
+    throw new Error('Market-data update timed out after 15 minutes');
+  }
+
+  function showRefreshError(err) {
+    const meta = document.getElementById('meta-generated');
+    meta.textContent = `Update failed: ${err.message}`;
+    meta.classList.add('stale');
+  }
+
+  // ── Indicator switch ─────────────────────────────────────────────────────────
+  // A button cycles off → weak → normal → strong → off. At least one indicator stays on, so the
+  // last one skips "off".
+  const LEVEL_TAG = { weak: 'weak', normal: '', strong: 'strong' };
+  function nextIndicatorState(ind) {
+    if (!activeIndicators.has(ind)) return 'weak';
+    const level = indicatorLevels[ind] || 'normal';
+    if (level === 'strong') return activeIndicators.size === 1 ? 'weak' : 'off';
+    return LEVELS[LEVELS.indexOf(level) + 1];
+  }
+  function paintIndicatorButtons() {
+    document.querySelectorAll('.ind-btn').forEach(b => {
+      const ind = b.dataset.ind;
+      const on = activeIndicators.has(ind);
+      const level = on ? (indicatorLevels[ind] || 'normal') : '';
+      b.classList.toggle('active', on);
+      b.classList.toggle('lvl-weak', level === 'weak');
+      b.classList.toggle('lvl-strong', level === 'strong');
+      b.setAttribute('aria-pressed', String(on));
+      b.querySelector('.ind-tag').textContent = on ? LEVEL_TAG[level] : '';
+      b.querySelector('.ind-name').textContent = indName(ind);
+      b.setAttribute('aria-label', `${indName(ind)}: ${on ? level : 'off'}. Click to change strength.`);
+    });
+  }
+  function toggleIndicator(ind) {
+    const next = nextIndicatorState(ind);
+    if (next === 'off') {
+      activeIndicators.delete(ind);
+      delete indicatorLevels[ind];
+    } else {
+      activeIndicators.add(ind);
+      indicatorLevels[ind] = next;
+    }
+    paintIndicatorButtons();
+    paintLegend();
+    renderGrid();
+  }
+
+  // ── Class filter ──────────────────────────────────────────────────────────────
+  function buildClassFilters() {
+    const container = document.getElementById('class-filters');
+    container.innerHTML = '';
+    const all = document.createElement('button');
+    all.className = 'filter-btn active';
+    all.textContent = 'All';
+    all.onclick = () => toggleClass('all');
+    container.appendChild(all);
+    for (const cls of allClasses) {
+      const btn = document.createElement('button');
+      btn.className = 'filter-btn';
+      btn.textContent = cls;
+      btn.dataset.cls = cls;
+      btn.onclick = () => toggleClass(cls);
+      container.appendChild(btn);
+    }
+  }
+
+  function toggleClass(cls) {
+    if (cls === 'all') {
+      activeClasses = new Set(['all']);
+    } else {
+      activeClasses.delete('all');
+      activeClasses.has(cls) ? activeClasses.delete(cls) : activeClasses.add(cls);
+      if (activeClasses.size === 0) activeClasses.add('all');
+    }
+    document.querySelectorAll('.filter-btn').forEach(b => {
+      const isAll = !b.dataset.cls;
+      b.classList.toggle('active',
+        (isAll && activeClasses.has('all')) || (b.dataset.cls && activeClasses.has(b.dataset.cls)));
+    });
+    renderGrid();
+  }
+
+  // The label, value and detail line one indicator shows on a card. `note` is its own read when
+  // several indicators are combined.
+  function indicatorBlock(t, ind, pal, many) {
+    const col = pal ? `color:${pal.fg}` : '';
+    const level = indicatorLevels[ind] || 'normal';
+    const own = strengthT(t, ind, level);
+    const note = many && own !== null
+      ? `${Math.round(own * 100)}% buy${level === 'normal' ? '' : ' · ' + level}` : '';
+    if (ind === 'rsi') {
+      const rsiV = rsiValue(t);
+      const value = rsiV != null ? rsiV.toFixed(1) : '—';
+      let extra = '';
+      if (rsiV != null && !many) {
+        const pct  = Math.min(100, Math.max(0, rsiV));
+        const fill = pal ? `background:${pal.fill}` : '';
+        extra = `<div class="rsi-bar-wrap"><div class="rsi-bar-fill" style="width:${pct}%;${fill}"></div></div>`;
+      }
+      return { label: indName('rsi'), value, extra, note };
+    }
+    if (ind === 'vwap') {
+      let extra = '';
+      const v = vwapValue(t);
+      if (t.last_price != null && v != null && v !== 0) {
+        const delta = (t.last_price - v) / v * 100;
+        extra = `<div class="vwap-delta" style="${col}">${delta >= 0 ? '+' : ''}${delta.toFixed(2)}% vs VWAP</div>`;
+      }
+      return { label: indName('vwap'), value: v != null ? fmtPrice(v) : '—', extra, note };
+    }
+    if (ind === 'fund') {
+      const read = fundRead(t);
+      const value = read ? ratingLabel(fundRating(read)) : '—';
+      const extra = read ? `<div class="vwap-delta" style="${col}">${read.n} rules · score ${read.score >= 0 ? '+' : ''}${read.score}</div>` : '';
+      return { label: 'Fundamentals', value, extra, note };
+    }
+    let extra = '';
+    const a = variant(t, 'sma', settings.trend.short), b = variant(t, 'sma', settings.trend.long);
+    if (a != null && b) {
+      const spread = (a - b) / b * 100;
+      extra = `<div class="vwap-delta" style="${col}">${spread >= 0 ? '+' : ''}${spread.toFixed(2)}% ${settings.trend.short}/${settings.trend.long} spread</div>`;
+    }
+    const value = a != null && b ? `${fmtPrice(a)} / ${fmtPrice(b)}` : '—';
+    return { label: `SMA ${settings.trend.short} / ${settings.trend.long}`, value, extra, note };
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+  function renderGrid() {
+    const query = document.getElementById('search-input').value.trim().toUpperCase();
+    const sort  = document.getElementById('sort-select').value;
+
+    let tickers = allTickers.filter(t => {
+      if (query && !t.ticker.includes(query) && !(t.name || '').toUpperCase().includes(query))
+        return false;
+      if (!activeClasses.has('all') && !activeClasses.has(t.asset_class))
+        return false;
+      return true;
+    });
+
+    // Attach computed t value for sorting/stats
+    tickers = tickers.map(t => ({ ...t, _t: colormapT(t) }));
+
+    tickers.sort((a, b) => {
+      if (sort === 'ticker')      return a.ticker.localeCompare(b.ticker);
+      if (sort === 'price-desc')  return (b.last_price ?? 0) - (a.last_price ?? 0);
+      if (sort === 'target-gap') {
+        const ga = targetGap(a.ticker), gb = targetGap(b.ticker);   // largest shortfall first; no target last
+        if (ga === null || gb === null) return (ga === null) - (gb === null) || a.ticker.localeCompare(b.ticker);
+        return gb - ga || a.ticker.localeCompare(b.ticker);
+      }
+      if (sort === 'value-desc')  return (a._t ?? -1) - (b._t ?? -1); // low t (sell) first
+      // value-asc: high t (buy/green) first; nulls last
+      const at = a._t ?? -1, bt = b._t ?? -1;
+      return bt !== at ? bt - at : a.ticker.localeCompare(b.ticker);
+    });
+
+    shownOrder = tickers.filter(t => t.detail_available).map(t => t.ticker);
+    if (detailTicker) paintDetailSteps();
+
+    // Stats: bucket by approximate signal for count display
+    let buyN = 0, sellN = 0, neutralN = 0, noDataN = 0;
+    for (const t of tickers) {
+      if (t._t === null) { noDataN++; continue; }
+      if (t._t > 0.6)       buyN++;
+      else if (t._t < 0.4)  sellN++;
+      else                   neutralN++;
+    }
+    const [buyR, buyG, buyB]    = rdylgn(0.85);
+    const [sellR, sellG, sellB] = rdylgn(0.10);
+    const [midR, midG, midB]    = rdylgn(0.50);
+    const onlyTrend = activeIndicators.size === 1 && activeIndicator() === 'trend';
+    const positiveLabel = onlyTrend ? 'bullish' : 'buy';
+    const negativeLabel = onlyTrend ? 'bearish' : 'sell';
+    document.getElementById('stats-bar').innerHTML = `
+      <div class="stat"><strong>${tickers.length}</strong> shown</div>
+      <div class="stat"><strong style="color:rgb(${buyR},${buyG},${buyB})">${buyN}</strong> ${positiveLabel}</div>
+      <div class="stat"><strong style="color:rgb(${sellR},${sellG},${sellB})">${sellN}</strong> ${negativeLabel}</div>
+      <div class="stat"><strong style="color:rgb(${midR},${midG},${midB})">${neutralN}</strong> neutral</div>
+      ${noDataN ? `<div class="stat"><strong style="color:var(--muted-fg)">${noDataN}</strong> no data</div>` : ''}
+    `;
+
+    if (!tickers.length) {
+      document.getElementById('grid-container').innerHTML =
+        '<div class="state-msg">No tickers match.</div>';
+      return;
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'ticker-grid';
+
+    for (const t of tickers) {
+      const pal   = cardPalette(t._t);
+      const card  = document.createElement('button');
+      card.type = 'button';
+      card.dataset.ticker = t.ticker;
+      card.className = 'ticker-card' + (pal ? '' : ' no-data');
+      card.disabled = !t.detail_available;
+      if (t.detail_available) {
+        card.title = `Open ${t.ticker} historical performance`;
+        card.addEventListener('click', () => openTickerDetail(t.ticker, card));
+      }
+
+      if (pal) {
+        card.style.background   = pal.bg;
+        card.style.borderColor  = pal.border;
+      }
+
+      const price = t.last_price != null ? fmtPrice(t.last_price) : '—';
+
+      const joint = jointT(t, [...activeIndicators], indicatorLevels);
+      const many = activeIndicators.size > 1;
+      const blocks = [...activeIndicators].map(ind => indicatorBlock(t, ind, pal, many));
+      const indLabel = many ? 'Joint buy probability' : blocks[0].label;
+      const indValue = many
+        ? (joint ? `${Math.round(joint.t * 100)}%` : '—')
+        : blocks[0].value;
+      const extraHtml = many
+        ? blocks.map(x => `<div class="vwap-delta ind-row"><span>${x.label}</span><span>${x.value}${x.note ? ' · ' + x.note : ''}</span></div>`).join('')
+          + (joint && joint.used < activeIndicators.size
+            ? `<div class="vwap-delta">${joint.used} of ${activeIndicators.size} signals available</div>` : '')
+        : blocks[0].extra;
+
+      // Badge label
+      let badge = '—';
+      if (t._t !== null) {
+        if (many) {
+          badge = t._t > 0.6 ? 'Buy' : t._t < 0.4 ? 'Sell' : 'Neutral';
+        } else if (activeIndicator() === 'rsi') {
+          const rv = rsiValue(t);
+          badge = rv <= settings.rsi.buy ? 'Oversold' : rv >= settings.rsi.sell ? 'Overbought' : 'Neutral';
+        } else if (activeIndicator() === 'vwap') {
+          badge = t._t > 0.55 ? 'Below' : t._t < 0.45 ? 'Above' : 'At VWAP';
+        } else if (activeIndicator() === 'fund') {
+          badge = t._t > 0.6 ? 'Strong' : t._t < 0.4 ? 'Weak' : 'Mixed';
+        } else {
+          const tr = trendRead(t);
+          badge = tr === 'bullish' ? 'Bullish' : tr === 'bearish' ? 'Bearish' : 'Mixed';
+        }
+      } else {
+        badge = t.fetch_status === 'error' ? 'No data' : '—';
+      }
+
+      const badgeBg  = pal ? `background:${pal.fgDim};border-color:${pal.border}` : '';
+      const badgeFg  = pal ? `color:${pal.fg}` : 'color:var(--muted-fg)';
+      const tickFg   = pal ? `color:${pal.fg}` : 'color:var(--muted-fg)';
+      const indValFg = pal ? `color:${pal.fg}` : 'color:var(--muted-fg)';
+
+      card.innerHTML = `
+        <div class="signal-badge" style="${badgeBg};${badgeFg}">${badge}</div>
+        <div class="card-ticker" style="${tickFg}">${esc(t.ticker)}</div>
+        <div class="card-asset">${esc(t.asset_class || '')}${t.name ? ' · ' + esc(t.name) : ''}</div>
+        <div class="card-price">${price}</div>
+        ${targetChip(t.ticker)}
+        <div class="card-indicator">
+          <span class="card-ind-label">${indLabel}</span>
+          <span class="card-ind-value" style="${indValFg}">${indValue}</span>
+        </div>
+        ${extraHtml}
+        ${t.detail_available ? '<div class="card-detail-cue">View chart, profile, and rating →</div>' : ''}
+      `;
+      grid.appendChild(card);
+    }
+
+    const container = document.getElementById('grid-container');
+    container.innerHTML = '';
+    container.appendChild(grid);
+  }
+
+  // ── Historical-performance detail ───────────────────────────────────────────
+  // The detail view fills the window under the top bar; its top edge follows the bar's height (which
+  // changes with the width), so the bar and its theme controls stay usable.
+  function placeDetailOverlay() {
+    const nav = document.querySelector('.cw-site-nav');
+    const top = nav ? Math.max(0, Math.round(nav.getBoundingClientRect().bottom)) : 0;
+    document.getElementById('detail-overlay').style.setProperty('--detail-top', top + 'px');
+  }
+  window.addEventListener('resize', placeDetailOverlay);
+
+  // The detail in its own, resizable browser window. It is the same page in "popout" mode, so the top bar
+  // is there and follows the theme: the choice lives in localStorage, which windows of this site share.
+  const IS_POPOUT = new URLSearchParams(window.location.search).get('window') === '1';
+  if (IS_POPOUT) document.body.classList.add('popout');
+  if (IS_POPOUT && new URLSearchParams(window.location.search).get('card') === 'chart') document.body.classList.add('popout-chart');
+
+  function popOutDetail() {
+    if (!detailTicker) return;
+    const url = `${window.location.pathname}?ticker=${encodeURIComponent(detailTicker)}&window=1`;
+    const opened = window.open(url, `tradility-${detailTicker}`, 'popup=yes,width=1240,height=900,resizable=yes,scrollbars=yes');
+    if (opened) closeTickerDetail();
+  }
+
+  // Full screen: the chart fills the window in place (browser full screen where it exists); the detail can
+  // also cover the top bar. Esc or the button leaves it. Pop out is the option that opens a window.
+  const asFullScreen = el => { try { const r = el.requestFullscreen && el.requestFullscreen(); if (r && r.catch) r.catch(() => {}); } catch (e) {} };
+  const leaveBrowserFullScreen = () => { try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); } catch (e) {} };
+
+  function openChartFullScreen() {
+    const card = document.getElementById('detail-chart-card');
+    if (!card) return;
+    placeDetailOverlay();
+    card.classList.add('chart-fs');
+    asFullScreen(card);
+    requestAnimationFrame(drawDetailChart);
+  }
+
+  function closeChartFullScreen() {
+    const card = document.getElementById('detail-chart-card');
+    if (!card || !card.classList.contains('chart-fs')) return false;
+    card.classList.remove('chart-fs');
+    leaveBrowserFullScreen();
+    requestAnimationFrame(drawDetailChart);
+    return true;
+  }
+
+  function toggleDetailFullScreen() {
+    const overlay = document.getElementById('detail-overlay');
+    const on = !document.body.classList.contains('detail-fs');
+    document.body.classList.toggle('detail-fs', on);
+    document.getElementById('detail-fs').title = on ? 'Leave full screen (Esc)' : 'Full screen (Esc to leave)';
+    if (on) asFullScreen(overlay); else leaveBrowserFullScreen();
+    requestAnimationFrame(() => { if (detailRecord) drawDetailChart(); });
+  }
+
+  function leaveFullScreen() {
+    const had = closeChartFullScreen();
+    if (document.body.classList.contains('detail-fs')) { toggleDetailFullScreen(); return true; }
+    return had;
+  }
+
+  function popOutChart() {
+    if (!detailTicker) return;
+    const url = `${window.location.pathname}?ticker=${encodeURIComponent(detailTicker)}&window=1&card=chart&range=${encodeURIComponent(detailRange)}`;
+    window.open(url, `tradility-chart-${detailTicker}`, 'popup=yes,width=1240,height=900,resizable=yes,scrollbars=yes');
+  }
+
+  document.addEventListener('fullscreenchange', () => {
+    if (document.fullscreenElement) return;
+    const card = document.getElementById('detail-chart-card');
+    if (card) card.classList.remove('chart-fs');
+    if (document.body.classList.contains('detail-fs')) {
+      document.body.classList.remove('detail-fs');
+      document.getElementById('detail-fs').title = 'Full screen (Esc to leave)';
+    }
+    requestAnimationFrame(() => { if (detailRecord) drawDetailChart(); });
+  });
+
+  function paintDetailSteps() {
+    const at = shownOrder.indexOf(detailTicker);
+    document.getElementById('detail-prev').disabled = at <= 0;
+    document.getElementById('detail-next').disabled = at < 0 || at >= shownOrder.length - 1;
+    document.getElementById('detail-pos').textContent = at < 0 ? '' : `${at + 1} / ${shownOrder.length}`;
+  }
+
+  // Open the previous (-1) or next (+1) card in the order the grid is showing.
+  function stepTickerDetail(delta) {
+    const at = shownOrder.indexOf(detailTicker);
+    const next = shownOrder[at + delta];
+    if (at < 0 || !next) return;
+    const card = [...document.querySelectorAll('.ticker-card')].find(c => c.dataset.ticker === next);
+    openTickerDetail(next, card || detailTrigger, delta < 0 ? 'detail-prev' : 'detail-next');
+  }
+
+  async function openTickerDetail(ticker, trigger, keepFocus) {
+    detailTrigger = trigger || null;
+    detailTicker = ticker;
+    paintDetailSteps();
+    detailRecord = null;
+    detailOrders = null;
+    tradeStep = null;
+    tradeQuote = null;
+    heldData = null;
+    const overlay = document.getElementById('detail-overlay');
+    placeDetailOverlay();
+    overlay.hidden = false;
+    document.body.classList.add('detail-open');
+    document.getElementById('detail-dialog-title').textContent = ticker;
+    document.getElementById('detail-dialog-name').textContent = '';
+    document.getElementById('detail-dialog-price').textContent = '';
+    document.getElementById('detail-content').innerHTML =
+      '<div class="detail-loading">Loading company and market details…</div>';
+    const keep = keepFocus && document.getElementById(keepFocus);
+    (keep && !keep.disabled ? keep : overlay.querySelector('.detail-close')).focus();
+
+    try {
+      const res = await fetch(`/api/tradility-analysis/${encodeURIComponent(ticker)}`);
+      const data = await res.json();
+      if (detailTicker !== ticker) return;   // stepped on to another card while this one loaded
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      detailRecord = data.ticker;
+      renderTickerDetail(data);
+      loadOrders(ticker);
+      bindTargetForm();
+    } catch (err) {
+      if (detailTicker !== ticker) return;
+      document.getElementById('detail-content').innerHTML =
+        `<div class="error-card">Could not load ${esc(ticker)} details: ${esc(err.message)}</div>`;
+    }
+  }
+
+  function closeTickerDetail() {
+    if (IS_POPOUT) { window.close(); return; }
+    leaveFullScreen();
+    document.getElementById('detail-overlay').hidden = true;
+    document.body.classList.remove('detail-open');
+    detailRecord = null;
+    detailOrders = null;
+    detailTicker = null;
+    if (detailTrigger) detailTrigger.focus();
+    detailTrigger = null;
+  }
+
+  function ratingLabel(value) {
+    return String(value || 'unknown').split('_').map(part =>
+      part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+  }
+
+  function ratingClass(value) {
+    if (value === 'buy' || value === 'strong_buy') return 'rating-positive';
+    if (value === 'sell' || value === 'strong_sell') return 'rating-negative';
+    return 'rating-neutral';
+  }
+
+  function formatReturn(value) {
+    if (value == null || !Number.isFinite(Number(value))) return '—';
+    const number = Number(value);
+    return `${number >= 0 ? '+' : ''}${number.toFixed(2)}%`;
+  }
+
+  function formatChartDate(value) {
+    return value.toLocaleDateString(undefined, {timeZone: 'UTC'});
+  }
+
+  function returnClass(value) {
+    if (value == null || Number(value) === 0) return '';
+    return Number(value) > 0 ? 'rating-positive' : 'rating-negative';
+  }
+
+  function safeExternalUrl(value) {
+    try {
+      const parsed = new URL(String(value || ''));
+      return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : '';
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  function formatEmployees(value) {
+    if (value == null || value === '') return '—';
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? Math.round(number).toLocaleString() : '—';
+  }
+
+  function formatProfileTime(value) {
+    if (!value) return '—';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleDateString();
+  }
+
+  // The symbol's Yahoo Finance quote page; empty when there is no symbol.
+  function yahooUrl(ticker) {
+    return ticker ? `https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/` : '';
+  }
+
+  function renderTickerDetail(data) {
+    const t = data.ticker;
+    const returns = t.returns || {};
+    const components = t.technical_components || {};
+    const profile = t.company_profile || {};
+    const companyName = profile.canonical_name || t.name || '';
+    const website = safeExternalUrl(profile.website);
+    const industry = profile.industry || profile.category || '—';
+    const sector = profile.sector || profile.fund_family || '—';
+    const vision = profile.vision_statement
+      ? esc(profile.vision_statement)
+      : 'Not supplied by the current source';
+    const position = Math.min(100, Math.max(0, Number(t.range_position_52w ?? 0)));
+    const returnLabels = [['1m','1M'], ['3m','3M'], ['1y','1Y'], ['3y','3Y'], ['5y','5Y']];
+    document.getElementById('detail-dialog-title').textContent = t.ticker || 'Stock details';
+    document.getElementById('detail-dialog-name').textContent =
+      [companyName, t.asset_class].filter(Boolean).join(' · ');
+    document.getElementById('detail-dialog-price').textContent = fmtPrice(t.last_price);
+
+    document.getElementById('detail-content').innerHTML = `
+      <div class="detail-layout">
+        <div class="detail-stack">
+          <section class="detail-card">
+            <div class="detail-card-title">Company overview</div>
+            ${profile.available ? `
+              <p class="company-description">${esc(profile.description || 'No business description was supplied by this source.')}</p>
+              <div class="company-facts">
+                <div class="company-fact"><span>Sector / family</span><strong>${esc(sector)}</strong></div>
+                <div class="company-fact"><span>Industry / category</span><strong>${esc(industry)}</strong></div>
+                <div class="company-fact"><span>Headquarters</span><strong>${esc(profile.headquarters || '—')}</strong></div>
+                <div class="company-fact"><span>Exchange</span><strong>${esc(profile.exchange || '—')}</strong></div>
+                <div class="company-fact"><span>Employees</span><strong>${formatEmployees(profile.employees)}</strong></div>
+                <div class="company-fact"><span>Entity type</span><strong>${esc(profile.entity_type || '—')}</strong></div>
+                <div class="company-fact"><span>Official mission / vision</span><strong>${vision}</strong></div>
+                <div class="company-fact"><span>Profile source</span><strong>${esc(profile.source || 'unknown')} · ${formatProfileTime(profile.retrieved_at)}</strong></div>
+              </div>
+            ` : `
+              <p class="company-description">No qualitative profile is available for this symbol yet. Run a refresh to populate newly supported equities and funds.</p>
+            `}
+            <div class="company-links">
+              ${website ? `<a class="company-link" href="${esc(website)}" target="_blank" rel="noopener noreferrer">Company website ↗</a>` : ''}
+              ${yahooUrl(t.ticker) ? `<a class="company-link" href="${esc(yahooUrl(t.ticker))}" target="_blank" rel="noopener noreferrer">Yahoo Finance ↗</a>` : ''}
+            </div>
+          </section>
+          <section class="detail-card" id="detail-target-card">
+            <div class="detail-card-title">To Invest target</div>
+            <div id="detail-target">${targetCardHtml(t.ticker, t.asset_class)}</div>
+          </section>
+          <section class="detail-card" id="detail-orders-card">
+            <div class="detail-card-title">Position and orders</div>
+            <div id="detail-orders"><div class="detail-loading">Loading position…</div></div>
+          </section>
+          <section class="detail-card" id="detail-chart-card">
+            <div class="detail-card-head"><div class="detail-card-title">Historical close</div>
+              <div class="chart-actions">
+                <button type="button" class="detail-step chart-open" onclick="openChartFullScreen()" aria-label="Full screen chart" title="Full screen (Esc to leave)">⛶</button>
+                <button type="button" class="detail-step chart-open" onclick="popOutChart()" aria-label="Open the chart in its own window" title="Open in its own window (resizable, keeps the top bar and theme)">⧉</button>
+                <button type="button" class="detail-step chart-fs-close" onclick="closeChartFullScreen()" aria-label="Leave full screen" title="Leave full screen (Esc)">✕</button>
+              </div></div>
+            <div class="detail-range-buttons">
+              ${returnLabels.map(([key, label]) =>
+                `<button type="button" class="detail-range-btn ${key === detailRange ? 'active' : ''}" data-range="${key}" onclick="setDetailRange('${key}')">${label}</button>`
+              ).join('')}
+            </div>
+            <div class="detail-chart-wrap"><canvas id="detail-chart"></canvas></div>
+            <div class="detail-chart-summary" id="detail-chart-summary"></div>
+          </section>
+          <section class="detail-card">
+            <div class="detail-card-title">Period performance</div>
+            <div class="return-grid">
+              ${returnLabels.map(([key, label]) => `<div class="return-cell">
+                <span class="return-label">${label}</span>
+                <span class="return-value ${returnClass(returns[key])}">${formatReturn(returns[key])}</span>
+              </div>`).join('')}
+            </div>
+          </section>
+        </div>
+        <div class="detail-stack">
+          <section class="detail-card">
+            <div class="detail-card-title">Technical market rating</div>
+            <div class="detail-rating">
+              <span class="detail-rating-label ${ratingClass(t.technical_rating)}">${esc(ratingLabel(t.technical_rating))}</span>
+              <strong>${Number(t.technical_score ?? 0) >= 0 ? '+' : ''}${Number(t.technical_score ?? 0)} / 4</strong>
+            </div>
+            <div class="component-list">
+              <div class="component-row"><span>Long-term trend</span><strong>${Number(components.long_term_trend ?? 0) >= 0 ? '+' : ''}${Number(components.long_term_trend ?? 0)}</strong></div>
+              <div class="component-row"><span>VWAP momentum</span><strong>${Number(components.vwap_momentum ?? 0) >= 0 ? '+' : ''}${Number(components.vwap_momentum ?? 0)}</strong></div>
+              <div class="component-row"><span>RSI reversion</span><strong>${Number(components.rsi_reversion ?? 0) >= 0 ? '+' : ''}${Number(components.rsi_reversion ?? 0)}</strong></div>
+            </div>
+            <p class="detail-disclaimer">Rule-based technical composite—not analyst consensus or investment advice. Authorized analyst ratings remain a separate planned data source.</p>
+          </section>
+          ${fundamentalsCardHtml(t)}
+          <section class="detail-card">
+            <div class="detail-card-title">52-week range</div>
+            <div class="range-track"><span class="range-marker" style="left:${position}%"></span></div>
+            <div class="range-labels"><span>${fmtPrice(t.low_52w)}</span><span>${fmtPrice(t.high_52w)}</span></div>
+            <div class="component-row" style="margin-top:8px"><span>Current position</span><strong>${t.range_position_52w == null ? '—' : Number(t.range_position_52w).toFixed(1) + '%'}</strong></div>
+          </section>
+          <section class="detail-card">
+            <div class="detail-card-title">Indicators and provenance</div>
+            <div class="component-list">
+              <div class="detail-meta-row"><span>RSI 14</span><strong>${t.rsi_14 == null ? '—' : Number(t.rsi_14).toFixed(1)} · ${esc(t.rsi_14_signal || 'unknown')}</strong></div>
+              <div class="detail-meta-row"><span>VWAP 20</span><strong>${fmtPrice(t.vwap_20)} · ${esc(t.vwap_20_signal || 'unknown')}</strong></div>
+              <div class="detail-meta-row"><span>Trend</span><strong>${esc(t.long_term_trend || 'unknown')}</strong></div>
+              <div class="detail-meta-row"><span>Source</span><strong>${esc(t.data_source || 'unknown')}</strong></div>
+              <div class="detail-meta-row"><span>Coverage</span><strong>${esc(t.period_start || '—')} → ${esc(t.period_end || '—')}</strong></div>
+              <div class="detail-meta-row"><span>Generated</span><strong>${data.generated_at ? new Date(data.generated_at).toLocaleString() : '—'}</strong></div>
+            </div>
+            ${t.fallback_reason ? `<p class="detail-disclaimer">Fallback: ${esc(t.fallback_reason)}</p>` : ''}
+          </section>
+        </div>
+      </div>`;
+    requestAnimationFrame(drawDetailChart);
+  }
+
+  // Schwab fundamentals: the figures, and for companies the rules that read them as buy or sell.
+  const FUND_LABELS = [
+    ['pe', 'P/E', 'x'], ['peg', 'PEG', 'x'], ['pb', 'Price / book', 'x'], ['roe', 'Return on equity', '%'],
+    ['net_margin', 'Net margin', '%'], ['gross_margin', 'Gross margin', '%'],
+    ['rev_growth', 'Revenue growth (year)', '%'], ['eps_growth', 'EPS growth (TTM)', '%'],
+    ['debt_to_equity', 'Debt / equity', '%'], ['current_ratio', 'Current ratio', 'x'],
+    ['interest_coverage', 'Interest coverage', 'x'], ['dividend_yield', 'Dividend yield', '%'],
+    ['short_float', 'Short interest / float', '%'], ['beta', 'Beta', ''],
+    ['market_cap', 'Market cap', '$'], ['eps_ttm', 'EPS (TTM)', '$'],
+  ];
+  function fundNumber(value, unit) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '—';
+    if (unit === '$' && Math.abs(n) >= 1e6) {
+      const units = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M']];
+      const [div, suffix] = units.find(([d]) => Math.abs(n) >= d);
+      return '$' + (n / div).toFixed(2) + suffix;
+    }
+    const text = Math.abs(n) >= 100 ? n.toFixed(0) : n.toFixed(2);
+    return unit === '$' ? '$' + text : unit === '%' ? text + '%' : unit === 'x' ? text + 'x' : text;
+  }
+  function fundamentalsCardHtml(t) {
+    const f = t.fundamentals;
+    if (!f || !Object.keys(f).length) return '';
+    const read = t.fundamental_signals || [];
+    const rating = t.fundamental_rating;
+    const head = read.length && rating !== 'unavailable' ? `
+      <div class="detail-rating">
+        <span class="detail-rating-label ${ratingClass(rating)}">${esc(ratingLabel(rating))}</span>
+        <strong>${t.fundamental_score >= 0 ? '+' : ''}${t.fundamental_score} / ${t.fundamental_signal_count}</strong>
+      </div>` : '';
+    const signals = read.map(r => `<div class="component-row" title="${esc(r.rule)}"><span>${esc(r.label)}</span><strong class="${r.signal === 'buy' ? 'rating-positive' : r.signal === 'sell' ? 'rating-negative' : 'rating-neutral'}">${fundNumber(r.value, (FUND_LABELS.find(x => x[0] === r.key) || [])[2] || '')} · ${esc(r.signal)}</strong></div>`).join('');
+    const shown = new Set(read.map(r => r.key));
+    const others = FUND_LABELS.filter(([k]) => f[k] != null && !shown.has(k))
+      .map(([k, label, unit]) => `<div class="detail-meta-row"><span>${esc(label)}</span><strong>${fundNumber(f[k], unit)}</strong></div>`).join('');
+    const note = read.length ? '' : '<p class="detail-disclaimer">Funds report aggregates that do not read the same way, so no buy or sell rules are applied.</p>';
+    return `
+      <section class="detail-card" id="detail-fundamentals-card">
+        <div class="detail-card-title">Fundamentals · Schwab</div>
+        ${head}
+        <div class="component-list">${signals}${others}</div>
+        ${note}
+        <p class="detail-disclaimer">Rule-based reads of Schwab's reported figures (hover a row for its threshold)—a separate view from the technical rating, not analyst consensus or investment advice.</p>
+      </section>`;
+  }
+
+  function setDetailRange(range) {
+    if (!RANGES.includes(range)) return;
+    detailRange = range;
+    try { localStorage.setItem(RANGE_KEY, range); } catch (e) {}
+    document.querySelectorAll('.detail-range-btn').forEach(button =>
+      button.classList.toggle('active', button.dataset.range === range));
+    drawDetailChart();
+  }
+
+  function detailPointsForRange() {
+    const points = (detailRecord && detailRecord.price_history || [])
+      .filter(point => point && point.date && Number.isFinite(Number(point.close)))
+      .map(point => ({date: new Date(`${point.date}T00:00:00Z`), close: Number(point.close)}));
+    if (!points.length || detailRange === '5y') return points;
+    const end = new Date(points[points.length - 1].date);
+    const start = new Date(end);
+    if (detailRange === '1m') start.setUTCMonth(start.getUTCMonth() - 1);
+    if (detailRange === '3m') start.setUTCMonth(start.getUTCMonth() - 3);
+    if (detailRange === '1y') start.setUTCFullYear(start.getUTCFullYear() - 1);
+    if (detailRange === '3y') start.setUTCFullYear(start.getUTCFullYear() - 3);
+    return points.filter(point => point.date >= start);
+  }
+
+  // ── Position and orders ──────────────────────────────────────────────────────
+  async function loadOrders(ticker) {
+    try {
+      const res = await fetch(`/api/tradility-orders/${encodeURIComponent(ticker)}`);
+      const data = await res.json();
+      if (detailTicker !== ticker) return;
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      detailOrders = data;
+    } catch (err) {
+      if (detailTicker !== ticker) return;
+      detailOrders = null;
+      const box = document.getElementById('detail-orders');
+      if (box) box.innerHTML = `<div class="error-card">Could not load orders: ${esc(err.message)}</div>`;
+      return;
+    }
+    refreshTargetCard();
+    await loadTradeStatus();
+    // so the account list can show what each account can spend, and a buy can be checked before previewing
+    if (tradeStatus && tradeStatus.available) loadHeld();
+    if (tradeStatus && tradeStatus.enabled && !accountsData) await loadAccounts();
+    renderOrders();
+    drawDetailChart();
+  }
+
+  async function loadTradeStatus() {
+    try {
+      const res = await fetch('/api/tradility-trade/status');
+      tradeStatus = await res.json();
+    } catch (err) {
+      tradeStatus = {available: false, enabled: false};
+    }
+  }
+
+  async function sendOrder(method, path, body) {
+    const res = await fetch(path, {
+      method,
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  function orderPath(id) {
+    return `/api/tradility-orders/${encodeURIComponent(detailTicker)}${id ? '/' + encodeURIComponent(id) : ''}`;
+  }
+
+  async function changeOrder(id, change) {
+    const order = detailOrders.orders.find(o => o.id === id);
+    if (!order) return;
+    const next = {side: order.side, kind: order.kind, quantity: order.quantity, price: order.price,
+                  status: order.status, date: order.date, note: order.note, ...change};
+    await submitOrder(() => sendOrder('PUT', orderPath(id), next));
+  }
+
+  async function submitOrder(action) {
+    const ticker = detailTicker;
+    try {
+      const data = await action();
+      if (detailTicker !== ticker) return;
+      detailOrders = data;
+      renderOrders();
+      drawDetailChart();
+    } catch (err) {
+      const box = document.getElementById('order-error');
+      if (box) box.textContent = err.message;
+    }
+  }
+
+  // Where this ticker is held today, per account (needs the trader service).
+  let heldData = null;
+  function heldBox() {
+    return heldData ? holdingsTable(detailTicker, heldData.accounts, heldData.statements) : '';
+  }
+
+  async function loadHeld() {
+    const ticker = detailTicker;
+    try {
+      const res = await fetch(`/api/tradility-trade/holdings/${encodeURIComponent(ticker)}`);
+      const data = await res.json();
+      if (detailTicker !== ticker || !res.ok || !data.ok) return;
+      heldData = data;
+    } catch (err) {
+      return;
+    }
+    const box = document.getElementById('held-box');
+    if (box) box.innerHTML = heldBox();
+    if (detailOrders && !tradeStep) renderOrders();   // the 'if this fills' column uses what is held
+  }
+
+  function targetCardHtml(ticker, assetClass) {
+    const r = targetFor(ticker);
+    const cats = (targetsData && targetsData.categories) || [];
+    if (!targetsData) return '<div class="orders-sync">To Invest is not available right now.</div>';
+    if (!r) {
+      const guess = /crypto/i.test(assetClass || '') ? 'Crypto' : /etf|fund/i.test(assetClass || '') ? 'ETFs' : 'Stocks';
+      return `<p class="company-description">${esc(ticker)} is not in your To Invest list.</p>
+        <form class="target-form" id="target-form" data-add="1" autocomplete="off">
+          <select name="category" aria-label="Category">${cats.map(c => `<option ${c === guess ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+          <input name="target_pct" type="number" step="any" min="0" max="100" placeholder="Target % (optional)" aria-label="Target percent">
+          <button type="submit">Add to To Invest</button>
+        </form><div class="order-error" id="target-error" role="alert"></div>`;
+    }
+    const gap = targetGap(ticker), room = gap != null && targetsData.portfolio_value ? gap / 100 * targetsData.portfolio_value : null;
+    const basket = r.mode === 'basket' && r.basket_pct != null && r.target_input != null
+      ? ` <span class="orders-sync">(${esc(String(r.target_input))}% of the ${esc(r.category)} basket, which is ${esc(String(r.basket_pct))}% of the portfolio)</span>` : '';
+    const pending = detailOrders ? openOrdersShare() : null;
+    return `${r.target != null ? `<div>${shareBar(r.current || 0, pending, r.target, {big: true})}${barLegend(pending != null)}</div>` : ''}
+      <div class="orders-summary" style="margin-top:8px">
+        <span>Category<strong>${esc(r.category)}</strong></span>
+        <span>Target<strong>${pctPlain(r.target)}</strong>${basket}</span>
+        <span>Now<strong>${r.current == null ? 'not held' : pctPlain(r.current)}</strong></span>
+        <span>${gap == null ? '' : gap > 0.05 ? 'Below target by' : gap < -0.05 ? 'Above target by' : 'At target'}<strong class="${gap > 0.05 ? 'ret-pos' : gap < -0.05 ? 'ret-neg' : ''}">${gap == null || Math.abs(gap) <= 0.05 ? '' : pctPlain(Math.abs(gap))}${room == null || Math.abs(gap) <= 0.05 ? '' : ' ≈ ' + money(Math.abs(room))}</strong></span>
+      </div>
+      <form class="target-form" id="target-form" autocomplete="off">
+        <input name="target_pct" type="number" step="any" min="0" max="100" value="${r.target_input == null ? '' : esc(String(r.target_input))}" aria-label="Target percent" placeholder="Target %">
+        <span class="orders-sync">${r.mode === 'basket' ? 'of the ' + esc(r.category) + ' basket' : 'of the portfolio'}</span>
+        <button type="submit">Save target</button> <a class="company-link" href="/to-invest">Open To Invest ↗</a>
+      </form><div class="order-error" id="target-error" role="alert"></div>`;
+  }
+
+  async function saveTarget(form) {
+    const f = Object.fromEntries(new FormData(form).entries());
+    try {
+      const res = await fetch(`/api/tradility-targets/${encodeURIComponent(detailTicker)}`, {
+        method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+        body: JSON.stringify({target_pct: f.target_pct || '', category: f.category || ''}),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    } catch (err) {
+      document.getElementById('target-error').textContent = err.message;
+      return;
+    }
+    await loadTargets();
+    const box = document.getElementById('detail-target');
+    if (box) {
+      box.innerHTML = targetCardHtml(detailTicker, detailRecord && detailRecord.asset_class);
+      bindTargetForm();
+    }
+    renderGrid();
+  }
+
+  // The target bar also shows what the open orders would add, so redraw it once the orders are known.
+  function refreshTargetCard() {
+    const box = document.getElementById('detail-target');
+    if (!box || !targetsData || !detailRecord) return;
+    box.innerHTML = targetCardHtml(detailTicker, detailRecord.asset_class);
+    bindTargetForm();
+  }
+
+  function bindTargetForm() {
+    const form = document.getElementById('target-form');
+    if (form) form.addEventListener('submit', event => { event.preventDefault(); saveTarget(form); });
+  }
+
+  // What an open order does to this holding's share of the portfolio, against its To Invest target.
+  // The base is the same one To Invest uses (the holdings export's total), so the numbers agree
+  // with the cards. `after` is the share if just this order fills; `delta` is the target minus
+  // that, so a positive delta is still short of the target.
+  function currentShare() {
+    const r = targetFor(detailTicker);
+    if (r && r.current != null) return r.current;
+    const total = targetsData && targetsData.portfolio_value;
+    if (!total || !heldData) return r ? 0 : null;
+    const held = (heldData.accounts || []).reduce((a, x) => a + (x.value || 0), 0)
+      + (heldData.statements || []).reduce((a, x) => a + (x.market_value || 0), 0);
+    return held / total * 100;
+  }
+
+  function orderPrice(o) {
+    return o.price != null ? o.price : (detailRecord ? detailRecord.last_price : null);
+  }
+
+  function orderEffect(o, base) {
+    const total = targetsData && targetsData.portfolio_value;
+    const price = orderPrice(o);
+    const now = base == null ? currentShare() : base;
+    if (!total || price == null || now == null) return null;
+    const move = (o.side === 'buy' ? 1 : -1) * o.quantity * price / total * 100;
+    const r = targetFor(detailTicker);
+    const after = Math.max(0, now + move);
+    return {after, move, target: r && r.target != null ? r.target : null, delta: r && r.target != null ? r.target - after : null};
+  }
+
+  function effectText(e) {
+    if (!e) return '—';
+    const gap = e.delta == null ? ''
+      : Math.abs(e.delta) <= 0.05 ? ' · on target'
+      : e.delta > 0 ? ` · ${pctPlain(e.delta)} below target ${pctPlain(e.target)}`
+      : ` · ${pctPlain(-e.delta)} above target ${pctPlain(e.target)}`;
+    return `→ ${pctPlain(e.after)}${gap}`;
+  }
+
+  function effectCell(o) {
+    const e = orderEffect(o);
+    if (!e) return '—';
+    return `<div>${effectText(e)}</div>${shareBar(currentShare(), e.after, e.target)}`;
+  }
+
+  // The share after every open order fills, in order, or null.
+  function openOrdersShare() {
+    const open = detailOrders.orders.filter(o => o.status === 'open');
+    let share = currentShare();
+    if (!open.length || share == null || !(targetsData && targetsData.portfolio_value)) return null;
+    for (const o of open) {
+      const e = orderEffect(o, share);
+      if (e) share = e.after;
+    }
+    return share;
+  }
+
+  function openOrdersEffect() {
+    const open = detailOrders.orders.filter(o => o.status === 'open');
+    if (!open.length) return '';
+    let share = currentShare();
+    if (share == null || !(targetsData && targetsData.portfolio_value)) return '';
+    for (const o of open) {
+      const e = orderEffect(o, share);
+      if (e) share = e.after;
+    }
+    const r = targetFor(detailTicker);
+    const gap = r && r.target != null ? r.target - share : null;
+    const text = gap == null ? `${pctPlain(share)} of the portfolio` : `${pctPlain(share)} of the portfolio, ${Math.abs(gap) <= 0.05 ? 'on' : (gap > 0 ? pctPlain(gap) + ' below' : pctPlain(-gap) + ' above')} the ${pctPlain(r.target)} target`;
+    return `<div class="orders-sync">If all ${open.length} open order${open.length === 1 ? '' : 's'} fill${open.length === 1 ? 's' : ''}: ${text}.
+      ${shareBar(currentShare(), share, r && r.target != null ? r.target : null, {big: true})}${barLegend(true)}</div>`;
+  }
+
+  function sourceLabel(source) {
+    return {schwab: 'Schwab', binance: 'Binance.US'}[source] || 'Manual';
+  }
+
+  // Which brokers the read-only export covers, and when it was last fetched.
+  function syncNote() {
+    const sync = detailOrders && detailOrders.synced || {};
+    const names = Object.keys(sync.sources || {});
+    if (!names.length) return 'Broker orders are not synced yet; orders below were entered by hand.';
+    const ok = names.filter(n => sync.sources[n]).map(sourceLabel);
+    const failed = names.filter(n => !sync.sources[n]).map(sourceLabel);
+    const when = sync.generated_at ? new Date(sync.generated_at).toLocaleString() : 'unknown time';
+    return `Synced (read-only) from ${ok.join(', ') || 'no broker'} · ${esc(when)}`
+      + (failed.length ? ` · not available: ${failed.join(', ')}` : '');
+  }
+
+  // ── Placing orders (preview, then a typed confirmation) ─────────────────────
+  function canTrade() {
+    return !!(tradeStatus && tradeStatus.available && tradeStatus.enabled
+              && ((tradeStatus.tickers || []).includes('*') || (tradeStatus.tickers || []).includes(detailTicker)));
+  }
+
+  // ── Accounts ─────────────────────────────────────────────────────────────────
+  let accountsData = null;
+  let financeSummary = null; // net worth and cash come from the Finances page's read-only API
+
+  async function loadAccounts() {
+    const body = document.getElementById('accounts-body');
+    body.innerHTML = '<div class="state-msg">Loading accounts…</div>';
+    try {
+      const res = await fetch('/api/tradility-accounts');
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      accountsData = data;
+      try {
+        const fin = await fetch('/api/finances/summary');
+        financeSummary = fin.ok ? await fin.json() : null;
+      } catch (err) { financeSummary = null; }
+    } catch (err) {
+      accountsData = null;
+      body.innerHTML = `<div class="error-card">Could not load accounts: ${esc(err.message)}. Account details need the trader service to be running.</div>`;
+      return;
+    }
+    renderAccounts();
+  }
+
+  function row(label, value) {
+    return value == null ? '' : `<dt>${esc(label)}</dt><dd>${value}</dd>`;
+  }
+
+  function renderAccounts() {
+    const body = document.getElementById('accounts-body');
+    const accounts = (accountsData && accountsData.accounts) || [];
+    const sources = (accountsData && accountsData.sources) || {};
+    const failed = Object.entries(sources).filter(([, v]) => !v.ok).map(([k, v]) => `${sourceLabel(k)}: ${esc(v.error || 'unavailable')}`);
+    const total = accounts.reduce((sum, a) => sum + (a.total_value || 0), 0);
+    const statements = (accountsData && accountsData.statements) || [];
+    const statementTotal = statements.reduce((sum, i) => sum + (i.total || 0), 0);
+    const parts = [];
+    if (accounts.length) parts.push(`${money(total)} live across ${accounts.length}`);
+    if (statements.length) parts.push(`${money(statementTotal)} from statements`);
+    document.getElementById('accounts-total').textContent = parts.length ? `· ${parts.join(' + ')}` : '';
+    body.innerHTML = `<div class="accounts-grid">${accounts.map(a => `
+      <div class="account-card">
+        <h4><span>${esc(a.label)}</span>
+          <span>
+            <span class="account-flag">${esc(a.type)}</span>
+            ${a.margin_eligible ? '<span class="account-flag">margin eligible</span>' : ''}
+            ${a.day_trader ? '<span class="account-flag warn">pattern day trader</span>' : ''}
+            ${a.closing_only ? '<span class="account-flag warn">closing only</span>' : ''}
+            ${a.in_call ? '<span class="account-flag warn">margin call</span>' : ''}
+          </span>
+        </h4>
+        <dl>
+          ${row('Total value', a.total_value == null ? null : money(a.total_value))}
+          ${row('Cash', a.cash == null ? null : money(a.cash))}
+          ${row('Available for new stock orders', a.spendable == null ? null : money(a.spendable))}
+          ${row('Buying power', a.buying_power == null ? null : money(a.buying_power))}
+          ${row('Available funds', a.available_funds == null ? null : money(a.available_funds))}
+          ${row('Day-trading buying power', a.day_trading_buying_power == null ? null : money(a.day_trading_buying_power))}
+          ${row('Margin balance', a.margin_balance == null ? null : money(a.margin_balance))}
+          ${row('Market value of holdings', a.long_market_value == null ? null : money(a.long_market_value))}
+          ${row('Equity', a.equity_percentage == null ? null : a.equity_percentage.toFixed(1) + '%')}
+          ${row('Positions', a.positions == null ? null : String(a.positions))}
+          ${a.broker === 'binance' ? row('Key can trade', a.can_trade ? 'yes' : 'no') + row('Key can withdraw', a.can_withdraw ? 'YES' : 'no') : ''}
+        </dl>
+        ${a.broker === 'binance' && a.can_withdraw ? '<div class="account-warning">This API key can withdraw funds. Use a key with withdrawals disabled.</div>' : ''}
+      </div>`).join('')}
+      ${statements.map(i => `<div class="account-card">
+        <h4><span>${esc(i.name)}</span><span class="account-flag">from statements</span></h4>
+        <dl>${row('Total value', money(i.total))}${row('As of', esc(i.as_of))}</dl>
+        <div class="orders-sync">Not read live. This is the last statement the finance pipeline has, so the value may be out of date.</div>
+      </div>`).join('')}
+      ${financeSummary ? `<a class="account-card" href="/finances" style="text-decoration:none;color:inherit">
+        <h4><span>Net worth and bank accounts</span><span class="account-flag">Finances →</span></h4>
+        <dl>${row('Net worth', money(financeSummary.net_worth_with_cash))}${row('Cash in bank accounts', money(financeSummary.cash))}</dl>
+        <div class="orders-sync">Bank accounts, balances over time and data freshness are on the Finances page.</div>
+      </a>` : ''}
+      ${failed.length ? `<div class="account-warning">Not available: ${failed.join(' · ')}</div>` : ''}
+    </div>
+    <div class="orders-sync" style="padding:0 12px 10px">Updated ${esc(new Date(accountsData.generated_at).toLocaleTimeString())} · <a href="#" id="accounts-refresh">Refresh</a></div>
+    <div id="money-box"></div>`;
+    document.getElementById('accounts-refresh').addEventListener('click', event => { event.preventDefault(); loadAccounts(); });
+    loadMoney();
+  }
+
+  // ── Deposits, withdrawals and transfers ──────────────────────────────────────
+  let transfersData = null, moneyStep = null, includeJournals = false;
+
+  async function loadMoney() {
+    const box = document.getElementById('money-box');
+    if (!box) return;
+    try {
+      const [tr, st] = await Promise.all([
+        fetch('/api/tradility-transfers').then(r => r.json()),
+        tradeStatus ? Promise.resolve(tradeStatus) : fetch('/api/tradility-trade/status').then(r => r.json()),
+      ]);
+      if (!tr.ok) throw new Error(tr.error || 'unavailable');
+      transfersData = tr;
+      tradeStatus = st;
+    } catch (err) {
+      box.innerHTML = `<div class="account-warning" style="padding:0 12px 10px">Deposit and withdrawal history is not available: ${esc(err.message)}</div>`;
+      return;
+    }
+    renderMoney();
+  }
+
+  function renderMoney() {
+    const box = document.getElementById('money-box');
+    const rows = (transfersData.transfers || []).filter(r => includeJournals || r.kind !== 'journal');
+    const hidden = (transfersData.transfers || []).length - rows.length;
+    const sum = dir => rows.filter(r => r.direction === dir && r.asset === 'USD').reduce((a, r) => a + r.amount, 0);
+    const w = (tradeStatus && tradeStatus.withdrawals) || {};
+    box.innerHTML = `<div class="trade-box" style="margin:0 12px 12px">
+      <h4>Deposits and withdrawals · past year${rows.length ? ` · ${money(sum('in'))} in, ${money(sum('out'))} out (USD)` : ''}</h4>
+      <label class="orders-sync"><input type="checkbox" id="money-journals" ${includeJournals ? 'checked' : ''}> include internal journals${hidden ? ` (${hidden} hidden)` : ''}</label>
+      ${rows.length ? `<table class="orders-table"><thead><tr><th>Date</th><th>Where</th><th>Type</th><th class="num">Amount</th><th>Status</th><th>Note</th></tr></thead><tbody>
+        ${rows.slice(0, 40).map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.broker === 'schwab' ? 'Schwab …' + r.account : 'Binance.US')}</td><td>${esc(r.kind)}</td>
+          <td class="num">${r.direction === 'in' ? '+' : '−'}${r.asset === 'USD' ? money(r.amount) : esc(String(r.amount)) + ' ' + esc(r.asset)}</td><td>${esc(r.status)}</td><td>${esc(r.note || '')}</td></tr>`).join('')}
+        </tbody></table>${rows.length > 40 ? `<div class="orders-sync">Showing the latest 40 of ${rows.length}.</div>` : ''}`
+        : '<p class="company-description">No deposits or withdrawals found.</p>'}
+      <div class="orders-sync">Schwab does not offer money movement through its API, so transfers there are history only.</div>
+      ${withdrawSection(w)}
+    </div>`;
+    box.querySelector('#money-journals').addEventListener('change', e => { includeJournals = e.target.checked; renderMoney(); });
+    const form = box.querySelector('#withdraw-form');
+    if (form) form.addEventListener('submit', event => { event.preventDefault(); startWithdraw(form); });
+    const go = box.querySelector('#withdraw-go');
+    if (go) go.addEventListener('click', sendWithdraw);
+    const discard = box.querySelector('#withdraw-discard');
+    if (discard) discard.addEventListener('click', () => { moneyStep = null; renderMoney(); });
+  }
+
+  function withdrawSection(w) {
+    if (!w.enabled) return '<div class="orders-sync">Binance.US withdrawals are turned off in the trading policy.</div>';
+    if (!(w.destinations || []).length) return '<div class="orders-sync">No withdrawal destinations are listed in the policy.</div>';
+    return `<h4 style="margin-top:12px">Withdraw from Binance.US · only to destinations in your policy, up to ${money(w.per_withdrawal_usd)} each, ${money(w.daily_withdrawal_usd)} a day (${money(w.spent_today)} used)</h4>
+      <form class="order-form" id="withdraw-form" autocomplete="off">
+        <select name="label" aria-label="Destination" required>
+          <option value="">Destination…</option>
+          ${w.destinations.map(d => `<option value="${esc(d.label)}">${esc(d.label)} · ${esc(d.coin)} ${esc(d.network)} ${esc(d.to)}</option>`).join('')}
+        </select>
+        <input name="amount" type="number" step="any" min="0" placeholder="Amount" aria-label="Amount" required>
+        <button type="submit" class="primary">Preview</button>
+      </form>
+      ${moneyStep ? `<div><p>Withdraw ${esc(String(moneyStep.amount))} ${esc(moneyStep.coin)} (about ${money(moneyStep.notional)}) to <strong>${esc(moneyStep.label)}</strong> (${esc(moneyStep.network)} ${esc(moneyStep.to)}).</p>
+        <p>Type <strong>${esc(moneyStep.phrase)}</strong> to confirm. This sends real funds and cannot be undone.</p>
+        <input type="text" id="withdraw-phrase" autocomplete="off" aria-label="Confirmation phrase" style="width:260px">
+        <button type="button" class="primary" id="withdraw-go">Withdraw</button> <button type="button" id="withdraw-discard">Discard</button></div>` : ''}
+      <div class="order-error" id="withdraw-error" role="alert"></div>`;
+  }
+
+  async function withdrawCall(step, body) {
+    const res = await fetch(`/api/tradility-trade/withdraw/${step}`, {
+      method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken}, body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  async function startWithdraw(form) {
+    const f = Object.fromEntries(new FormData(form).entries());
+    try {
+      moneyStep = await withdrawCall('preview', {label: f.label, amount: f.amount});
+    } catch (err) {
+      moneyStep = null;
+      renderMoney();
+      document.getElementById('withdraw-error').textContent = err.message;
+      return;
+    }
+    renderMoney();
+  }
+
+  async function sendWithdraw() {
+    const step = moneyStep, phrase = document.getElementById('withdraw-phrase').value;
+    moneyStep = null;   // single use, whatever happens next
+    let message = 'Sent. It appears in the history once Binance.US lists it.';
+    try {
+      await withdrawCall('confirm', {preview_id: step.preview_id, phrase});
+    } catch (err) {
+      message = err.message;
+    }
+    tradeStatus = null;   // refresh today's total
+    await loadMoney();
+    const box = document.getElementById('withdraw-error');
+    if (box) box.textContent = message;
+  }
+
+  document.getElementById('accounts-panel').addEventListener('toggle', event => {
+    if (event.target.open && !accountsData) loadAccounts();
+  });
+
+  // The selected account's funds, shown under the order form.
+  function showAccountFunds() {
+    const note = document.getElementById('trade-funds');
+    const form = document.getElementById('trade-form');
+    if (!note || !form) return;
+    const mask = form.elements.account ? form.elements.account.value : '';
+    const submit = document.getElementById('trade-submit');
+    if (submit) submit.textContent = mask.startsWith('fid:') ? 'Prepare Fidelity ticket' : 'Preview';
+    if (mask.startsWith('fid:')) {
+      const fa = ((tradeStatus && tradeStatus.fidelity_accounts) || []).find(a => 'fid:' + a.id === mask);
+      note.classList.remove('trade-warn');
+      note.textContent = `Fidelity has no order API, so this only prepares a ticket for you to submit on Fidelity. ${fa && fa.as_of ? 'Balances and holdings here are from the ' + fa.as_of + ' statement.' : ''}`;
+      return;
+    }
+    const acct = ((accountsData && accountsData.accounts) || []).find(a => a.broker === (isCrypto() ? 'binance' : 'schwab') && (isCrypto() || a.id === mask));
+    note.textContent = acct
+      ? `${acct.label}: buying power ${money(acct.buying_power)} · cash ${money(acct.cash)} · ${acct.margin_eligible ? 'margin account' : 'cash account'}`
+      : '';
+    // Catch an unaffordable buy before the preview: the order's cost against what the account can spend.
+    note.classList.remove('trade-warn');
+    if (acct && form.elements.side.value === 'buy') {
+      const qty = Number(form.elements.quantity.value);
+      const px = form.elements.kind.value === 'limit' ? Number(form.elements.price.value) : (tradeQuote ? tradeQuote.mark : 0);
+      const cost = qty * px;
+      const spendable = acct.spendable != null ? acct.spendable : acct.buying_power;
+      if (cost > 0 && spendable != null && cost > spendable) {
+        note.textContent += ` · This order costs about ${money(cost)}, more than the ${money(spendable)} this account can spend on new stock orders, so Schwab is likely to reject it. Pick another account or a smaller quantity.`;
+        note.classList.add('trade-warn');
+      }
+    }
+  }
+
+  function money(v) {
+    return '$' + Number(v || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+
+  function tradeSection() {
+    if (!tradeStatus || !tradeStatus.available) return '';
+    if (!tradeStatus.enabled) return '<div class="orders-sync">Order placement is turned off in the trading policy.</div>';
+    if (!canTrade()) return `<div class="orders-sync">${esc(detailTicker)} is not on the trading allowlist.</div>`;
+    if (isCrypto() && !(tradeStatus.brokers || []).includes('binance')) return '<div class="orders-sync">Binance.US trading is not enabled. It needs a separate trade-enabled API key (withdrawals off) and <code>binance = true</code> in the trading policy; see the Tradility README.</div>';
+    const limits = `up to ${money(tradeStatus.per_order_usd)} per order, ${money(tradeStatus.daily_usd)} a day (${money(tradeStatus.spent_today)} used)`;
+    return `<div class="trade-box" id="trade-box">
+      <h4>Place an order · ${limits}</h4>
+      <form class="order-form" id="trade-form" autocomplete="off">
+        ${isCrypto() ? '' : `<select name="account" aria-label="Schwab account" required>
+          <option value="">Account…</option>
+          ${(tradeStatus.schwab_accounts || []).map(a => {
+            const info = ((accountsData && accountsData.accounts) || []).find(x => x.broker === 'schwab' && x.id === a);
+            const spend = info ? (info.spendable != null ? info.spendable : info.buying_power) : null;
+            return `<option value="${esc(a)}">…${esc(a)}${spend == null ? '' : ' · ' + money(spend) + ' available'}</option>`;
+          }).join('')}
+          ${(tradeStatus.fidelity_accounts || []).map(a => `<option value="fid:${esc(a.id)}">${esc(a.label)}${a.type ? ' (' + esc(a.type) + ')' : ''} · Fidelity, you submit it</option>`).join('')}
+        </select>`}
+        <select name="side" aria-label="Side"><option>buy</option><option>sell</option></select>
+        <select name="kind" aria-label="Order type"><option>limit</option><option>market</option></select>
+        <input name="quantity" type="number" step="any" min="0" placeholder="Qty" aria-label="Quantity" required>
+        <input name="price" type="number" step="any" min="0" placeholder="Limit price" aria-label="Limit price">
+        ${isCrypto() ? '' : `<select name="tif" aria-label="Duration">
+          ${TIF_CHOICES.map(([v, label]) => `<option value="${v}" ${((tradeStatus.defaults || {}).time_in_force || 'gtc') === v ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
+        <select name="session" aria-label="Trading hours">
+          ${SESSION_CHOICES.map(([v, label]) => `<option value="${v}" ${((tradeStatus.defaults || {}).session || 'normal') === v ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>`}
+        <button type="submit" class="primary" id="trade-submit">Preview</button>
+      </form>
+      <div class="template-chips" id="trade-templates" aria-label="Order templates"></div>
+      <div class="orders-sync" id="trade-default"></div>
+      <div class="orders-sync" id="trade-funds"></div>
+      <div id="trade-confirm">${tradeStep ? confirmPanel() : ''}</div>
+      <div class="order-error" id="trade-error" role="alert"></div>
+    </div>`;
+  }
+
+  function signed(v) {
+    return (v >= 0 ? '+' : '−') + money(Math.abs(v));
+  }
+
+  function pctText(v) {
+    return v == null ? '—' : v.toFixed(2) + '%';
+  }
+
+  // How the order changes the position: dollars, shares and the share of the account and of everything
+  // you own, before and after, plus what is left to trade with.
+  // Where a symbol is held now, account by account. In a preview the chosen account also shows
+  // what it will hold after the order.
+  function holdingsTable(symbol, rows, statements) {
+    const list = (rows || []).filter(r => r.quantity || r.chosen);
+    const stmt = statements || [];
+    if (!list.length && !stmt.length) return `<div class="orders-sync">You hold no ${esc(symbol)} in any connected account.</div>`;
+    const shares = n => esc(String(+Number(n).toFixed(6)));
+    const barMax = Math.max(0.01, ...list.flatMap(r => [r.percent || 0, r.percent_after || 0])) * 1.15;
+    const body = list.map(r => `<tr${r.chosen ? ' class="order-open"' : ''}><td>${esc(r.label)}${r.chosen ? ' (this order)' : ''}</td>
+      <td class="num">${shares(r.quantity)}${r.chosen ? ' → ' + shares(r.quantity_after) : ''}</td>
+      <td class="num">${money(r.value)}${r.chosen ? ' → ' + money(r.value_after) : ''}</td>
+      <td class="num">${pctText(r.percent)}${r.chosen ? ' → ' + pctText(r.percent_after) : ''}${r.percent != null ? shareBar(r.percent, r.chosen ? r.percent_after : null, null, {max: barMax}) : ''}</td></tr>`).join('')
+      + stmt.map(s2 => `<tr><td>${esc(s2.name)} <span class="account-flag">statement ${esc(s2.as_of)}</span></td><td class="num">${shares(s2.quantity)}</td><td class="num">${money(s2.market_value)}</td><td class="num">—</td></tr>`).join('');
+    return `<table class="orders-table impact-table"><thead><tr><th>Where you hold ${esc(symbol)}</th><th class="num">Shares</th><th class="num">Value</th><th class="num">Share of account</th></tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  // Against the To Invest target: where this order leaves the holding as a share of everything.
+  function targetPreviewLine(im) {
+    const r = targetFor(detailTicker);
+    if (!r || r.target == null) return '';
+    const basis = im.everything || im.overall;
+    const after = basis && basis.percent ? basis.percent.after : null;
+    const before = basis && basis.percent ? basis.percent.before : null;
+    if (after == null) return '';
+    const gap = r.target - after;
+    const verdict = gap > 0.05 ? `still ${pctPlain(gap)} below` : gap < -0.05 ? `${pctPlain(-gap)} above` : 'on';
+    return `<div class="orders-sync"><strong>To Invest target ${pctPlain(r.target)}</strong> (${esc(r.category)}): this order moves the holding from ${pctPlain(before)} to ${pctPlain(after)} of everything, ${verdict} the target.
+      ${shareBar(before || 0, after, r.target, {big: true})}${barLegend(true)}</div>`;
+  }
+
+  function impactTable(im) {
+    if (!im) return '<div class="orders-sync">Position impact is not available right now.</div>';
+    const a = im.account, o = im.overall;
+    const shareMax = Math.max(0.01, ...[a.percent, o.percent, im.everything && im.everything.percent].filter(Boolean).flatMap(p => [p.before || 0, p.after || 0])) * 1.15;
+    const row = (label, q, v, p, total) => `<tr><td>${esc(label)}</td>
+      <td class="num">${esc(String(+q.before.toFixed(6)))} → ${esc(String(+q.after.toFixed(6)))}</td>
+      <td class="num">${money(v.before)} → ${money(v.after)} <span class="${v.after >= v.before ? 'ret-pos' : 'ret-neg'}">(${signed(v.after - v.before)})</span></td>
+      <td class="num">${pctText(p.before)} → ${pctText(p.after)}${p.before != null && p.after != null ? shareBar(p.before, p.after, null, {max: shareMax}) : ''}</td><td class="num">${money(total)}</td></tr>`;
+    return `<table class="orders-table impact-table"><thead><tr><th>${esc(im.symbol)} position</th><th class="num">Shares</th><th class="num">Value</th><th class="num">Share of total</th><th class="num">Total</th></tr></thead><tbody>
+      ${row(a.label || 'This account', a.quantity, a.value, a.percent, a.total)}
+      ${row('All live accounts (Schwab + Binance.US)', o.quantity, o.value, o.percent, o.total)}
+      ${im.everything ? row(`Plus ${im.everything.institutions.map(i => i.name + ' (statement ' + i.as_of + ')').join(', ')}`, im.everything.quantity, im.everything.value, im.everything.percent, im.everything.total) : ''}
+      </tbody></table>
+      <div class="orders-sync">“Live” accounts are read from Schwab and Binance.US now. ${im.everything ? 'The last row adds accounts known only from statements, whose values may be months old.' : 'Accounts that are only known from statements are not included.'}</div>
+      <div class="orders-sync">${a.cash_after == null ? '' : `Cash after: ${money(a.cash_after)}${a.cash_after < 0 ? ' (the shortfall is margin)' : ''}`}${a.buying_power_after == null ? '' : ` · available for new stock orders after: ${money(a.buying_power_after)}`}</div>
+      ${targetPreviewLine(im)}
+      ${holdingsTable(im.symbol, im.holdings, null)}`;
+  }
+
+  // The optional browser step: have the service fill in Fidelity's own ticket, press its Preview and check it.
+  function fidelityStagePanel() {
+    const mode = (tradeStatus && tradeStatus.fidelity_automation) || 'off';
+    const st = tradeStep;
+    if (st.staged) {
+      const ok = (st.staged.checks || []).map(c => `<li>${esc(c)}</li>`).join('');
+      const submit = mode === 'submit';
+      return `<div class="orders-sync"><strong>Staged on Fidelity and checked.</strong> Fidelity's own preview shows this order:
+          <ul style="margin:4px 0 4px 18px">${ok}</ul>
+          ${st.staged.screenshot ? `Screenshot: ${esc(st.staged.screenshot)}.` : ''}</div>
+        ${submit
+          ? `<p>This sends a real order through Fidelity's website.</p>
+             ${st.confirmation === 'phrase' ? `<p>Type <strong>${esc(st.phrase)}</strong> to confirm.</p><input type="text" id="fid-phrase" autocomplete="off" aria-label="Confirmation phrase" style="width:260px">` : ''}
+             <button type="button" class="primary" id="fid-submit">Place order at Fidelity</button>`
+          : '<p>Submitting from here is off (the policy says <code>stage</code>). Submit it on Fidelity yourself, then record it below.</p>'}`;
+    }
+    if (mode === 'off') return "<p>Nothing is sent from here. Review these fields on Fidelity's trade page and submit the order there, then record it.</p>";
+    return `<p>Nothing has been sent. You can have the service fill in Fidelity's trade ticket in its browser and check Fidelity's own preview against this order${mode === 'submit' ? ', and then place it' : ''}.</p>
+      <button type="button" id="fid-stage">Stage on Fidelity</button>`;
+  }
+
+  async function stageOnFidelity() {
+    const st = tradeStep;
+    tradeFail('Filling in Fidelity’s ticket…');
+    try {
+      const data = await tradeCall('fidelity-stage', {ticker: detailTicker, ...st.ticket.order});
+      tradeStep = {...st, ticket: data, staged: data.staged, previewId: data.preview_id, phrase: data.phrase, confirmation: data.confirmation, warnings: data.warnings};
+    } catch (err) {
+      renderOrders();
+      tradeFail(err.message);
+      return;
+    }
+    renderOrders();
+    tradeFail('');
+  }
+
+  async function submitOnFidelity() {
+    const st = tradeStep;
+    const phraseInput = document.getElementById('fid-phrase');
+    const phrase = phraseInput ? phraseInput.value : '';
+    tradeStep = null;   // single use, whatever happens next
+    try {
+      await tradeCall('fidelity-submit', {preview_id: st.previewId, phrase});
+    } catch (err) {
+      renderOrders();
+      tradeFail(err.message);
+      return;
+    }
+    await loadOrders(detailTicker);
+    tradeFail('Sent through Fidelity’s website. Fidelity is not read live, so record it below or check Fidelity for the fill.');
+  }
+
+  function fidelityPanel() {
+    const t = tradeStep.ticket;
+    return `<div>
+      <p>${tradeStep.summary}</p>
+      <table class="orders-table"><tbody>${t.fields.map(([k, v]) => `<tr><td>${esc(k)}</td><td><strong>${esc(v)}</strong></td></tr>`).join('')}</tbody></table>
+      ${impactTable(t.impact)}
+      ${(t.warnings || []).map(w => `<div class="trade-warn">${esc(w)}</div>`).join('')}
+      ${fidelityStagePanel()}
+      <button type="button" id="fid-copy">Copy ticket</button>
+      <a class="company-link" href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">Open Fidelity's trade page ↗</a>
+      <button type="button" class="primary" id="fid-record">I placed it at Fidelity</button>
+      <button type="button" id="trade-discard">Discard</button>
+    </div>`;
+  }
+
+  function confirmPanel() {
+    const st = tradeStep;
+    if (st.kind === 'fidelity') return fidelityPanel();
+    const button = st.kind === 'place' && st.confirmation === 'button';
+    return `<div>
+      <p>${st.summary}</p>
+      ${st.kind === 'place' ? impactTable(st.impact) : ''}
+      ${(st.warnings || []).map(w => `<div class="trade-warn">${esc(w)}</div>`).join('')}
+      ${button ? `<p>${'This sends a real order.'}</p>`
+               : `<p>Type <strong>${esc(st.phrase)}</strong> to confirm. ${st.kind === 'cancel' ? 'This cancels a real order.' : 'This sends a real order.'}</p>
+      <input type="text" id="trade-phrase" autocomplete="off" aria-label="Confirmation phrase">`}
+      <button type="button" class="primary" id="trade-go">${button ? 'Place order' : (st.kind === 'cancel' ? 'Cancel order' : 'Send order')}</button>
+      <button type="button" id="trade-discard">Discard</button>
+    </div>`;
+  }
+
+  // Schwab's durations and sessions. Day, GTC and the extended session are the familiar
+  // DAY, DAY EXT, GTC and GTC EXT; the rest are checked here and again by the service.
+  const TIF_CHOICES = [['day', 'Day'], ['gtc', 'GTC'], ['fok', 'Fill or kill'], ['ioc', 'Immediate or cancel'],
+                       ['end_of_week', 'End of week'], ['end_of_month', 'End of month'], ['next_end_of_month', 'Next end of month']];
+  const SESSION_CHOICES = [['normal', 'Regular hours'], ['extended', 'Extended hours'],
+                           ['am', 'Pre-market only'], ['pm', 'After-hours only']];
+  const TIF_LABEL = Object.fromEntries(TIF_CHOICES);
+  const HOURS_LABEL = {normal: '', extended: ', extended hours', am: ', pre-market only', pm: ', after-hours only'};
+
+  // Keep the choices to ones Schwab accepts: a market order is a regular-hours day / FOK / IOC order,
+  // and extended, pre-market and after-hours orders are limit orders that are day or GTC.
+  function syncOrderChoices(form) {
+    const kind = form.elements.kind.value, tif = form.elements.tif, session = form.elements.session;
+    if (!tif || !session) return;
+    if (kind === 'market') {
+      session.value = 'normal';
+      if (!['day', 'fok', 'ioc'].includes(tif.value)) tif.value = 'day';
+    } else if (session.value !== 'normal' && !['day', 'gtc'].includes(tif.value)) {
+      tif.value = 'gtc';
+    }
+    for (const option of tif.options) {
+      const restricted = (kind === 'market' && !['day', 'fok', 'ioc'].includes(option.value))
+        || (session.value !== 'normal' && !['day', 'gtc'].includes(option.value));
+      option.disabled = restricted;
+    }
+    for (const option of session.options) option.disabled = kind === 'market' && option.value !== 'normal';
+  }
+
+  function isCrypto() {
+    return /-USD$/.test(detailTicker || '');
+  }
+
+  // The default order: a good-till-cancelled limit at the policy's offset from the live mark
+  // (below it for a buy, above it for a sell). Editable; it refills when the side changes.
+  let tradeQuote = null;
+  async function loadQuote() {
+    const ticker = detailTicker;
+    try {
+      const res = await fetch(`/api/tradility-trade/quote/${encodeURIComponent(ticker)}`);
+      const data = await res.json();
+      if (detailTicker !== ticker || !res.ok || !data.ok) throw new Error(data.error || 'no quote');
+      tradeQuote = data;
+    } catch (err) {
+      tradeQuote = null;
+      const note = document.getElementById('trade-default');
+      if (note) note.textContent = `No live mark for ${ticker}: ${err.message}`;
+      return;
+    }
+    fillDefaults();
+    paintTemplates();
+  }
+
+  // One-click order shapes from the policy (default: buy 1/2/4/8% under the mark, sell 1/2/4/8% over).
+  // A template sets the side, a limit order, the price from the live mark and, if it names them, the
+  // duration and hours. You still enter the quantity and preview before anything is sent.
+  function paintTemplates() {
+    const box = document.getElementById('trade-templates');
+    if (!box || !tradeQuote) return;
+    const list = tradeQuote.templates || [];
+    box.innerHTML = list.map((t, i) => `<button type="button" class="${esc(t.side)}" data-template="${i}" title="${esc(t.side)} limit at ${fmtPrice(t.price)}">${esc(t.name)}</button>`).join('');
+    box.querySelectorAll('button').forEach(button => button.addEventListener('click', () => applyTemplate(list[Number(button.dataset.template)], button)));
+  }
+
+  function applyTemplate(t, button) {
+    const form = document.getElementById('trade-form');
+    if (!form || !t) return;
+    form.elements.side.value = t.side;
+    form.elements.kind.value = 'limit';
+    form.elements.price.disabled = false;
+    form.elements.price.value = t.price;
+    if (form.elements.tif && t.tif) form.elements.tif.value = t.tif;
+    if (form.elements.session && t.session) form.elements.session.value = t.session;
+    if (form.elements.tif) syncOrderChoices(form);
+    document.querySelectorAll('#trade-templates button').forEach(b => b.classList.toggle('active', b === button));
+    document.getElementById('trade-default').textContent =
+      `Mark ${fmtPrice(tradeQuote.mark)} · template: ${t.name} (${t.offset_pct > 0 ? '+' : ''}${t.offset_pct}% → ${fmtPrice(t.price)})`;
+    form.elements.quantity.focus();
+  }
+
+  function fillDefaults() {
+    const form = document.getElementById('trade-form');
+    if (!form || !tradeQuote) return;
+    const d = (tradeStatus && tradeStatus.defaults) || {};
+    const side = form.elements.side.value;
+    const pct = side === 'buy' ? d.buy_offset_pct : d.sell_offset_pct;
+    if (form.elements.kind.value === 'limit') form.elements.price.value = side === 'buy' ? tradeQuote.buy_price : tradeQuote.sell_price;
+    document.getElementById('trade-default').textContent =
+      `Mark ${fmtPrice(tradeQuote.mark)} · default: limit ${Math.abs(pct)}% ${pct < 0 ? 'below' : 'above'} the mark`;
+  }
+
+  function tradeFail(message) {
+    const box = document.getElementById('trade-error');
+    if (box) box.textContent = message;
+  }
+
+  async function tradeCall(action, body) {
+    const res = await fetch(`/api/tradility-trade/${action}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  // Fidelity has no order API, so an order for a Fidelity account is only prepared: the service checks it
+  // and lays it out in Fidelity's fields, and you submit it on Fidelity's own page.
+  function fidelityAccount(form) {
+    const v = form.elements.account ? form.elements.account.value : '';
+    return v.startsWith('fid:') ? v.slice(4) : null;
+  }
+
+  async function startFidelityTicket(form, mask) {
+    const f = Object.fromEntries(new FormData(form).entries());
+    try {
+      const t = await tradeCall('fidelity-ticket', {ticker: detailTicker, account: mask, side: f.side, kind: f.kind, quantity: f.quantity, price: f.kind === 'limit' ? f.price : null, ...(f.session ? {session: f.session, tif: f.tif} : {})});
+      tradeStep = {kind: 'fidelity', ticket: t, warnings: t.warnings, impact: t.impact, summary: `Prepare for Fidelity: ${esc(t.order.side)} ${esc(String(t.order.quantity))} ${esc(t.order.ticker)}${t.order.price != null ? ' at ' + fmtPrice(t.order.price) : ' at market'}, about ${fmtPrice(t.notional)} (last price ${fmtPrice(t.last_price)})`};
+    } catch (err) {
+      tradeStep = null;
+      renderOrders();
+      tradeFail(err.message);
+      return;
+    }
+    renderOrders();
+  }
+
+  async function recordFidelityOrder() {
+    const st = tradeStep, o = st.ticket.order;
+    tradeStep = null;
+    try {
+      const res = await fetch(`/api/tradility-orders/${encodeURIComponent(detailTicker)}`, {
+        method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+        body: JSON.stringify({side: o.side, kind: o.kind, quantity: o.quantity, price: o.price, status: 'open', note: `${st.ticket.fields[0][1]} (submitted at Fidelity)`}),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      detailOrders = data;
+    } catch (err) {
+      renderOrders();
+      tradeFail(err.message);
+      return;
+    }
+    renderOrders();
+    tradeFail('Recorded as an open order. Fidelity is not read live, so mark it filled or cancelled here when it is.');
+  }
+
+  async function copyTicket() {
+    const text = tradeStep && tradeStep.ticket ? tradeStep.ticket.text : '';
+    try {
+      await navigator.clipboard.writeText(text);
+      tradeFail('Ticket copied.');
+    } catch (err) {
+      tradeFail('Could not copy; select the fields above instead.');
+    }
+  }
+
+  async function startPreview(form) {
+    tradeFail('');
+    const fid = fidelityAccount(form);
+    if (fid) return startFidelityTicket(form, fid);
+    const f = Object.fromEntries(new FormData(form).entries());
+    try {
+      const pv = await tradeCall('preview', {ticker: detailTicker, account: f.account || '', side: f.side, kind: f.kind, quantity: f.quantity, price: f.kind === 'limit' ? f.price : null, ...(f.session ? {session: f.session, tif: f.tif} : {})});
+      const o = pv.order;
+      tradeStep = {
+        kind: 'place', previewId: pv.preview_id, phrase: pv.phrase, warnings: pv.warnings, impact: pv.impact, confirmation: pv.confirmation,
+        summary: `${esc(o.side)} ${esc(String(o.quantity))} ${esc(o.ticker)} ${o.kind === 'limit' ? 'at ' + fmtPrice(o.price) + ' (' + (TIF_LABEL[o.tif] || o.tif) + (HOURS_LABEL[o.session] || '') + ')' : 'at market'} on ${esc(pv.broker)}${o.account ? ' account …' + esc(o.account) : ''}, about ${fmtPrice(pv.notional)} (last price ${fmtPrice(pv.last_price)})`,
+      };
+    } catch (err) {
+      tradeStep = null;
+      renderOrders();
+      tradeFail(err.message);
+      return;
+    }
+    renderOrders();
+  }
+
+  function startBrokerCancel(id) {
+    const order = detailOrders.orders.find(o => o.id === id);
+    if (!order) return;
+    const brokerId = id.replace(/^[a-z]+-/, '');
+    tradeStep = {
+      kind: 'cancel', broker: order.source, orderId: brokerId, account: order.account || '', phrase: `CANCEL ${brokerId}`, warnings: [],
+      symbol: order.source === 'binance' ? detailTicker.replace(/-USD$/, '') + 'USD' : '',
+      summary: `Cancel the open ${esc(order.side)} ${esc(String(order.quantity))} ${esc(detailTicker)} order at ${esc(sourceLabel(order.source))}`,
+    };
+    renderOrders();
+  }
+
+  async function sendStep() {
+    const st = tradeStep;
+    const ticker = detailTicker;
+    const previousOrders = detailOrders;
+    const phraseInput = document.getElementById('trade-phrase');
+    const phrase = phraseInput ? phraseInput.value : '';
+    tradeStep = null;   // a preview is single use; start over after any outcome
+    let result;
+    try {
+      if (st.kind === 'place') result = await tradeCall('confirm', {preview_id: st.previewId, phrase});
+      else result = await tradeCall('cancel', {broker: st.broker, order_id: st.orderId, symbol: st.symbol, account: st.account, phrase});
+    } catch (err) {
+      renderOrders();
+      tradeFail(err.message);
+      return;
+    }
+    await loadOrders(ticker);   // the broker's export refreshes on its own schedule
+    if (detailTicker !== ticker) return;
+    if (st.kind === 'place') {
+      const o = result.order || {};
+      const id = `${result.broker}-${result.broker_order_id}`;
+      const placed = {
+        ...o, id, source: result.broker, status: 'open',
+        date: new Date().toISOString().slice(0, 10),
+        note: 'Placed now; awaiting broker sync',
+      };
+      detailOrders = detailOrders || previousOrders || {position: {}, orders: [], synced: {sources: {}}};
+      detailOrders.orders = [placed, ...detailOrders.orders.filter(order => order.id !== id)];
+      renderOrders();
+      drawDetailChart();
+      tradeFail('Placed. The open order is shown now; the next broker sync will confirm its status.');
+    } else {
+      tradeFail('Cancellation sent. The next broker sync will confirm its status.');
+    }
+  }
+
+  function renderOrders() {
+    const box = document.getElementById('detail-orders');
+    if (!box || !detailOrders) return;
+    const pos = detailOrders.position || {};
+    const last = detailRecord && detailRecord.last_price;
+    const entry = pos.avg_entry;
+    const pl = entry && last != null ? (last - entry) / entry * 100 : null;
+    const shares = n => String(+Number(n).toFixed(4));
+    const source = pos.source === 'orders' ? 'from filled buys'
+      : pos.source === 'live+holdings' ? 'Schwab live + statements' : pos.source === 'holdings' ? 'from statements' : '';
+    const coverage = pos.partial ? ` · covers ${shares(pos.covered_quantity)} of ${shares(pos.quantity)} shares; the rest have no cost on record` : '';
+    const rows = detailOrders.orders.map(o => `
+      <tr class="order-${esc(o.status)}">
+        <td>${esc(o.date)}</td>
+        <td>${esc(o.side)}</td>
+        <td>${esc(o.kind.replace('_', ' '))}</td>
+        <td class="num">${esc(String(o.quantity))}</td>
+        <td class="num">${o.price == null ? '—' : fmtPrice(o.price)}</td>
+        <td>${esc(o.status)}</td>
+        <td class="order-effect">${o.status === 'open' ? effectCell(o) : ''}</td>
+        <td>${esc(o.note || '')}</td>
+        <td>${esc(sourceLabel(o.source))}</td>
+        <td class="order-actions">
+          ${o.source && o.source !== 'manual' ? '' : o.status === 'open' && o.price != null ? `<button type="button" data-order-act="fill" data-id="${esc(o.id)}">Filled</button>` : ''}
+          ${o.source && o.source !== 'manual' ? (o.status === 'open' && canTrade() ? `<button type="button" data-order-act="broker-cancel" data-id="${esc(o.id)}">Cancel at broker</button>` : '') : o.status === 'open' ? `<button type="button" data-order-act="cancel" data-id="${esc(o.id)}">Cancel</button>` : ''}
+          ${o.source && o.source !== 'manual' ? '' : `<button type="button" data-order-act="delete" data-id="${esc(o.id)}" aria-label="Delete order">×</button>`}
+        </td>
+      </tr>`).join('');
+    box.innerHTML = `
+      <div class="orders-summary">
+        <span>Quantity<strong>${pos.quantity == null ? '—' : esc(String(pos.quantity))}</strong></span>
+        <span>Average entry<strong>${entry ? fmtPrice(entry) : '—'}</strong>${source || coverage ? ` <span>${source}${coverage}</span>` : ''}</span>
+        <span>Vs last price<strong class="${pl == null ? '' : returnClass(pl)}">${pl == null ? '—' : formatReturn(pl)}</strong></span>
+      </div>
+      ${rows ? `<table class="orders-table"><thead><tr><th>Date</th><th>Side</th><th>Type</th><th class="num">Qty</th><th class="num">Price</th><th>Status</th><th>If this fills</th><th>Note</th><th>Source</th><th></th></tr></thead><tbody>${rows}</tbody></table>${openOrdersEffect()}`
+             : '<p class="company-description">No orders recorded for this ticker.</p>'}
+      <div id="held-box">${heldBox()}</div>
+      ${tradeSection()}
+      <div class="orders-sync">${syncNote()}</div>
+      <form class="order-form" id="order-form" autocomplete="off">
+        <select name="side" aria-label="Side"><option>buy</option><option>sell</option></select>
+        <select name="kind" aria-label="Order type"><option>limit</option><option>market</option><option>stop</option><option value="stop_limit">stop limit</option></select>
+        <input name="quantity" type="number" step="any" min="0" placeholder="Qty" aria-label="Quantity" required>
+        <input name="price" type="number" step="any" min="0" placeholder="Price" aria-label="Price">
+        <select name="status" aria-label="Status"><option>open</option><option>filled</option><option>cancelled</option></select>
+        <input name="date" type="date" aria-label="Date" value="${new Date().toISOString().slice(0, 10)}">
+        <input name="note" type="text" maxlength="120" placeholder="Note" aria-label="Note">
+        <button type="submit">Add order</button>
+      </form>
+      <div class="order-error" id="order-error" role="alert"></div>`;
+    box.querySelector('#order-form').addEventListener('submit', event => {
+      event.preventDefault();
+      const f = new FormData(event.target);
+      submitOrder(() => sendOrder('POST', orderPath(), Object.fromEntries(f.entries())));
+    });
+    const tradeForm = box.querySelector('#trade-form');
+    if (tradeForm) {
+      tradeForm.addEventListener('submit', event => { event.preventDefault(); startPreview(tradeForm); });
+      tradeForm.elements.side.addEventListener('change', fillDefaults);
+      if (tradeForm.elements.session) {
+        tradeForm.elements.session.addEventListener('change', () => syncOrderChoices(tradeForm));
+        tradeForm.elements.tif.addEventListener('change', () => syncOrderChoices(tradeForm));
+        syncOrderChoices(tradeForm);
+      }
+      if (tradeForm.elements.account) tradeForm.elements.account.addEventListener('change', async () => {
+        if (!accountsData) await loadAccounts();
+        showAccountFunds();
+      });
+      ['quantity', 'price'].forEach(name => tradeForm.elements[name].addEventListener('input', showAccountFunds));
+      ['side', 'kind'].forEach(name => tradeForm.elements[name].addEventListener('change', showAccountFunds));
+      if (isCrypto()) (accountsData ? Promise.resolve() : loadAccounts()).then(showAccountFunds);
+      tradeForm.elements.kind.addEventListener('change', () => {
+        tradeForm.elements.price.disabled = tradeForm.elements.kind.value === 'market';
+        syncOrderChoices(tradeForm);
+        fillDefaults();
+      });
+      if (tradeQuote && tradeQuote.ticker === detailTicker) { fillDefaults(); paintTemplates(); }
+      else if (!tradeQuote) loadQuote();
+    }
+    const stage = box.querySelector('#fid-stage');
+    if (stage) stage.addEventListener('click', stageOnFidelity);
+    const fidSubmit = box.querySelector('#fid-submit');
+    if (fidSubmit) fidSubmit.addEventListener('click', submitOnFidelity);
+    const copy = box.querySelector('#fid-copy');
+    if (copy) copy.addEventListener('click', copyTicket);
+    const record = box.querySelector('#fid-record');
+    if (record) record.addEventListener('click', recordFidelityOrder);
+    const go = box.querySelector('#trade-go');
+    if (go) go.addEventListener('click', sendStep);
+    const discard = box.querySelector('#trade-discard');
+    if (discard) discard.addEventListener('click', () => { tradeStep = null; renderOrders(); });
+    box.querySelectorAll('[data-order-act]').forEach(button => button.addEventListener('click', () => {
+      const id = button.dataset.id, act = button.dataset.orderAct;
+      if (act === 'delete') submitOrder(() => sendOrder('DELETE', orderPath(id)));
+      else if (act === 'broker-cancel') startBrokerCancel(id);
+      else if (act === 'cancel') changeOrder(id, {status: 'cancelled'});
+      else changeOrder(id, {status: 'filled', date: new Date().toISOString().slice(0, 10)});
+    }));
+  }
+
+  // Price levels drawn across the chart: your average entry, and each open order's price.
+  function chartLevels() {
+    if (!detailOrders) return [];
+    const levels = [];
+    const entry = detailOrders.position && detailOrders.position.avg_entry;
+    if (entry) levels.push({price: entry, label: `Avg entry ${fmtPrice(entry)}${detailOrders.position.partial ? ' (partial)' : ''}`, kind: 'entry'});
+    for (const o of detailOrders.orders) {
+      if (o.status === 'open' && o.price != null) {
+        levels.push({price: o.price, label: `${o.side} ${o.kind.replace('_', ' ')} ${fmtPrice(o.price)}`, kind: 'order'});
+      }
+    }
+    return levels;
+  }
+
+  // Round values on the price axis (1, 2, 2.5, 5 times a power of ten, at least three when a finer step
+  // gives them) and calendar-aligned dates: days or weeks on a short range, months or years on a long one.
+  const NICE_STEPS = [1, 2, 2.5, 5, 10];
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function niceTicks(lo, hi, maxTicks) {
+    const span = (hi - lo) || 1, mag = Math.pow(10, Math.floor(Math.log10(span / Math.max(1, maxTicks))));
+    const steps = [...new Set([mag / 10, mag, mag * 10].flatMap(m => NICE_STEPS.map(n => Math.round(n * m * 1e9) / 1e9)))].sort((a, b) => a - b);
+    const at = step => { const out = []; for (let k = Math.ceil(lo / step - 1e-9); k * step <= hi + step * 1e-6; k++) out.push(Math.round(k * step * 1e6) / 1e6); return out; };
+    let pick = steps.find(st => at(st).length <= maxTicks) || steps[steps.length - 1];
+    let ticks = at(pick);
+    if (ticks.length < 3) { const finer = [...steps].reverse().find(st => st < pick && at(st).length >= 3); if (finer) { pick = finer; ticks = at(finer); } }
+    return ticks;
+  }
+  function timeAxis(t0, t1, plotW) {
+    const maxTicks = Math.max(2, Math.floor(plotW / 72)), days = (t1 - t0) / 864e5, out = [];
+    if (days <= 120) {
+      const step = [1, 2, 7, 14, 30].find(st => Math.ceil(days / st) <= maxTicks) || 30;
+      for (let d = Math.ceil(t0 / 864e5 / step) * step; d * 864e5 <= t1; d += step) {
+        const dt = new Date(d * 864e5);
+        out.push({t: d * 864e5, label: `${MON[dt.getUTCMonth()]} ${dt.getUTCDate()}`});
+      }
+      return out;
+    }
+    const a = new Date(t0), b = new Date(t1);
+    const o0 = a.getUTCFullYear() * 12 + a.getUTCMonth(), o1 = b.getUTCFullYear() * 12 + b.getUTCMonth();
+    const step = [1, 2, 3, 6, 12, 24, 60, 120].find(st => Math.ceil((o1 - o0 + 1) / st) <= maxTicks) || 120;
+    for (let o = Math.ceil(o0 / step) * step; o <= o1; o += step) {
+      const y = Math.floor(o / 12), m = o % 12, t = Date.UTC(y, m, 1);
+      if (t < t0 || t > t1) continue;
+      out.push({t, label: step >= 12 ? String(y) : `${MON[m]}${m === 0 || !out.length ? ' ’' + String(y).slice(2) : ''}`});
+    }
+    return out;
+  }
+
+  function drawDetailChart() {
+    const canvas = document.getElementById('detail-chart');
+    if (!canvas || !detailRecord) return;
+    const points = detailPointsForRange();
+    const summary = document.getElementById('detail-chart-summary');
+    if (points.length < 2) {
+      summary.textContent = 'Not enough history for this range.';
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.max(300, rect.width);
+    const height = Math.max(220, rect.height);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const pad = {left: 58, right: 12, top: 12, bottom: 28};
+    const plotW = width - pad.left - pad.right;
+    const plotH = height - pad.top - pad.bottom;
+    const prices = points.map(point => point.close);
+    let min = Math.min(...prices), max = Math.max(...prices);
+    const pricePad = Math.max((max - min) * 0.08, max * 0.005, 0.01);
+    min -= pricePad; max += pricePad;
+    const levels = chartLevels();
+    for (const level of levels) { min = Math.min(min, level.price - pricePad); max = Math.max(max, level.price + pricePad); }
+    const t0 = points[0].date.getTime(), t1 = points[points.length - 1].date.getTime();
+    const x = point => pad.left + (point.date.getTime() - t0) / Math.max(1, t1 - t0) * plotW;
+    const y = point => pad.top + (max - point.close) / Math.max(0.000001, max - min) * plotH;
+    const styles = getComputedStyle(document.documentElement);
+    const muted = styles.getPropertyValue('--muted').trim() || '#8b949e';
+    const border = styles.getPropertyValue('--border').trim() || '#30363d';
+    const rising = points[points.length - 1].close >= points[0].close;
+    const line = styles.getPropertyValue(rising ? '--green' : '--red').trim() || (rising ? '#3fb950' : '#f85149');
+
+    ctx.font = '10px ui-monospace, monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    const xTicks = timeAxis(t0, t1, plotW);
+    ctx.strokeStyle = border; ctx.lineWidth = 1; ctx.globalAlpha = 0.3;
+    for (const tick of xTicks) {
+      const xx = pad.left + (tick.t - t0) / Math.max(1, t1 - t0) * plotW;
+      ctx.beginPath(); ctx.moveTo(xx, pad.top); ctx.lineTo(xx, pad.top + plotH); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    for (const value of niceTicks(min, max, Math.max(3, Math.floor(plotH / 46)))) {
+      const yy = pad.top + (max - value) / Math.max(0.000001, max - min) * plotH;
+      ctx.strokeStyle = border; ctx.globalAlpha = 0.65; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(width - pad.right, yy); ctx.stroke();
+      ctx.globalAlpha = 1; ctx.fillStyle = muted;
+      ctx.fillText(fmtPrice(value), pad.left - 7, yy);
+    }
+
+    ctx.beginPath();
+    points.forEach((point, index) => index ? ctx.lineTo(x(point), y(point)) : ctx.moveTo(x(point), y(point)));
+    ctx.lineTo(x(points[points.length - 1]), pad.top + plotH);
+    ctx.lineTo(x(points[0]), pad.top + plotH);
+    ctx.closePath(); ctx.fillStyle = line; ctx.globalAlpha = 0.12; ctx.fill();
+    ctx.globalAlpha = 1; ctx.beginPath();
+    points.forEach((point, index) => index ? ctx.lineTo(x(point), y(point)) : ctx.moveTo(x(point), y(point)));
+    ctx.strokeStyle = line; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+
+    const accent = styles.getPropertyValue('--accent').trim() || '#58a6ff';
+    const levelY = price => pad.top + (max - price) / Math.max(0.000001, max - min) * plotH;
+    ctx.font = '10px ui-monospace, monospace';
+    for (const level of levels) {
+      const yy = levelY(level.price);
+      ctx.save();
+      ctx.strokeStyle = accent; ctx.fillStyle = accent; ctx.lineWidth = level.kind === 'entry' ? 1.6 : 1;
+      ctx.setLineDash(level.kind === 'entry' ? [] : [5, 4]);
+      ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(width - pad.right, yy); ctx.stroke();
+      ctx.setLineDash([]); ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+      ctx.fillText(level.label, width - pad.right - 2, yy - 2);
+      ctx.restore();
+    }
+    ctx.fillStyle = muted; ctx.textBaseline = 'bottom';
+    for (const tick of xTicks) {
+      const xx = pad.left + (tick.t - t0) / Math.max(1, t1 - t0) * plotW;
+      ctx.textAlign = xx < pad.left + 22 ? 'left' : xx > width - pad.right - 22 ? 'right' : 'center';
+      ctx.fillText(tick.label, xx, height - 3);
+    }
+    const change = (points[points.length - 1].close - points[0].close) / points[0].close * 100;
+    const calendarReturn = detailRecord.returns && detailRecord.returns[detailRange];
+    const displayedReturn = calendarReturn == null ? change : Number(calendarReturn);
+    summary.innerHTML = `<span>${points.length.toLocaleString()} observations · ${formatChartDate(points[0].date)} → ${formatChartDate(points[points.length - 1].date)}</span><strong class="${returnClass(displayedReturn)}">${formatReturn(displayedReturn)}</strong>`;
+  }
+
+  function fmtPrice(v) {
+    if (v == null) return '—';
+    if (v >= 1000) return '$' + v.toLocaleString(undefined, {maximumFractionDigits: 2});
+    if (v >= 1)    return '$' + v.toFixed(2);
+    if (v >= 0.01) return '$' + v.toFixed(4);
+    return '$' + v.toFixed(6);
+  }
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Indicator settings panel ─────────────────────────────────────────────────
+  const SETTINGS_KEY = 'tradility-indicator-settings';
+  const SMA_PAIRS = ['20/50', '20/100', '50/100', '50/200', '100/200', '200/300'];
+  const FUND_GROUP_LABELS = {
+    valuation: 'Valuation (P/E, PEG)', profitability: 'Profitability (ROE, margin)',
+    growth: 'Growth (revenue, earnings)', balance: 'Balance sheet (debt, liquidity, coverage)',
+    short: 'Short interest',
+  };
+  function saveSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (_) { /* private mode */ }
+  }
+  function loadSettings() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null');
+      if (!saved || typeof saved !== 'object') return;
+      for (const key of Object.keys(DEFAULT_SETTINGS)) {
+        if (saved[key] && typeof saved[key] === 'object') Object.assign(settings[key], saved[key]);
+      }
+      settings.fund.groups = (settings.fund.groups || []).filter(g => g in FUND_GROUPS);
+      if (!settings.fund.groups.length) settings.fund.groups = [...DEFAULT_SETTINGS.fund.groups];
+    } catch (_) { /* unreadable settings fall back to the defaults */ }
+  }
+  function setting(path, value) {
+    const [group, key] = path.split('.');
+    settings[group][key] = value;
+    applySettings();
+  }
+  function toggleFundGroup(group, on) {
+    const next = new Set(settings.fund.groups);
+    if (on) next.add(group); else next.delete(group);
+    if (!next.size) { buildSettingsPanel(); return; }   // keep at least one group
+    settings.fund.groups = Object.keys(FUND_GROUPS).filter(g => next.has(g));
+    applySettings();
+  }
+  function resetSettings() {
+    settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    buildSettingsPanel();
+    applySettings();
+  }
+  function applySettings() {
+    saveSettings();
+    paintIndicatorButtons();
+    paintLegend();
+    renderGrid();
+  }
+  function selectHtml(path, current, options, suffix = '') {
+    return `<select onchange="setting('${path}', Number(this.value))">${options.map(o =>
+      `<option value="${o}" ${Number(o) === Number(current) ? 'selected' : ''}>${o}${suffix}</option>`).join('')}</select>`;
+  }
+  function buildSettingsPanel() {
+    const s = settings;
+    document.getElementById('ind-settings-body').innerHTML = `
+      <div class="ind-set"><h4>RSI</h4><div class="ind-set-row">
+        <label>Period ${selectHtml('rsi.period', s.rsi.period, [7, 14, 21], ' days')}</label>
+        <label>Oversold at or below ${selectHtml('rsi.buy', s.rsi.buy, [20, 25, 30, 35, 40])}</label>
+        <label>Overbought at or above ${selectHtml('rsi.sell', s.rsi.sell, [60, 65, 70, 75, 80])}</label>
+      </div></div>
+      <div class="ind-set"><h4>VWAP</h4><div class="ind-set-row">
+        <label>Window ${selectHtml('vwap.window', s.vwap.window, [10, 20, 50], ' days')}</label>
+        <label>Decisive beyond ±${selectHtml('vwap.band', s.vwap.band, [1, 3, 5, 10], '%')}</label>
+      </div></div>
+      <div class="ind-set"><h4>Trend</h4><div class="ind-set-row">
+        <label>Averages <select onchange="const [a, b] = this.value.split('/').map(Number); settings.trend.short = a; settings.trend.long = b; applySettings();">${SMA_PAIRS.map(pair =>
+          `<option value="${pair}" ${pair === s.trend.short + '/' + s.trend.long ? 'selected' : ''}>${pair}-day</option>`).join('')}</select></label>
+        <label>Decisive gap ${selectHtml('trend.gap', s.trend.gap, [2, 5, 10], '%')}</label>
+      </div></div>
+      <div class="ind-set"><h4>Fundamentals</h4><div class="ind-set-row">
+        ${Object.keys(FUND_GROUPS).map(g => `<label><input type="checkbox" ${s.fund.groups.includes(g) ? 'checked' : ''} onchange="toggleFundGroup('${g}', this.checked)">${FUND_GROUP_LABELS[g]}</label>`).join('')}
+      </div><div class="ind-set-row">
+        <label>Decisive when rules agree ${selectHtml('fund.agree', s.fund.agree, [50, 75, 100], '%')}</label>
+      </div></div>
+      <button type="button" class="ind-set-reset" onclick="resetSettings()">Reset to defaults</button>`;
+  }
+  loadSettings();
+  buildSettingsPanel();
+  paintIndicatorButtons();
+
+  // Repaint legend after fonts/layout settle
+  window.addEventListener('load', paintLegend);
+  window.addEventListener('resize', () => {
+    paintLegend();
+    if (detailRecord) drawDetailChart();
+  });
+  document.getElementById('detail-overlay').addEventListener('click', event => {
+    if (event.target.id === 'detail-overlay') closeTickerDetail();
+  });
+  document.addEventListener('keydown', event => {
+    if (document.getElementById('detail-overlay').hidden) return;
+    if (event.key === 'Escape') {
+      if (!leaveFullScreen()) closeTickerDetail();
+    } else if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && !event.altKey
+               && !event.ctrlKey && !event.metaKey && !/^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName)) {
+      stepTickerDetail(event.key === 'ArrowLeft' ? -1 : 1);
+    }
+  });
+
+  loadData().then(() => {
+    const requestedRange = new URLSearchParams(window.location.search).get('range');
+    if (IS_POPOUT && RANGES.includes(requestedRange)) detailRange = requestedRange;
+    const requestedTicker = new URLSearchParams(window.location.search).get('ticker');
+    if (!requestedTicker) return;
+    const normalized = requestedTicker.toUpperCase();
+    const trigger = [...document.querySelectorAll('.ticker-card')]
+      .find(card => card.dataset.ticker === normalized && !card.disabled);
+    if (trigger) openTickerDetail(normalized, trigger);
+  });
+</script>
+</body>
+</html>

@@ -55,8 +55,16 @@
 
 ## Integration
 
-- [x] **Clockwork to-tradility webpage** — `/to-tradility` loads `tradility-analysis.json` and renders RSI/VWAP signals
-- [x] **Clockwork API endpoint** — `GET /api/tradility-analysis` serves the JSON to the webpage
+- [ ] [manual:2026-11-04] **Finish portal federation** — configure Clockwork to
+  link or reverse-proxy the standalone Tradility service, add optional provider
+  contracts for To Invest targets and consolidated finances, then remove its
+  duplicated Tradility template and domain API implementations after the
+  standalone deployment is verified.
+- [x] **Standalone Tradility web application** — `tradility-web` serves the
+  packaged indicator/detail UI and Tradility-owned analysis, order, refresh,
+  account, transfer, and trader-proxy APIs without Clockwork.
+- [x] **Legacy Clockwork to-tradility webpage** — `/to-tradility` loads
+  `tradility-analysis.json`; retained temporarily as a migration fallback.
 
 ## Done
 

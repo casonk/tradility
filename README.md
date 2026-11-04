@@ -42,6 +42,40 @@ The default history window is five years. Legacy day counts remain accepted
 (`--period 365` is normalized to `365d`); `5y`, `10y`, and `max` are clearer for
 long-term analysis.
 
+## Standalone web application
+
+Tradility owns and ships its web interface; Clockwork or another portfolio
+portal is optional. Install the web extra after generating an analysis file:
+
+```bash
+pip install -e ".[web]"
+tradility-web --analysis-file exports/tradility-analysis.json
+```
+
+Open `http://127.0.0.1:8769/`. The server binds to loopback by default and
+provides the indicator dashboard, on-demand ticker details, charts, manual and
+broker-export order views, and optional access to the separate trader service.
+Run `python -m tradility.trader_service` when order previews, placement,
+accounts, or transfers should be available; the web process never receives a
+broker credential.
+
+Standalone configuration uses environment variables:
+
+- `TRADILITY_ANALYSIS_FILE` and `TRADILITY_ORDERS_FILE` select the generated
+  analysis and broker-order exports.
+- `TRADILITY_HOLDINGS_FILE` supplies optional position and cost-basis context.
+- `TRADILITY_MANUAL_ORDERS_FILE` moves the owner-only manual-order state from
+  `~/.local/state/tradility/manual-orders.json`.
+- `TRADILITY_TRADER_URL` selects the loopback trader service (default
+  `http://127.0.0.1:8768`).
+- `TRADILITY_REFRESH_COMMAND` is an optional argv-style command the Update
+  market data button may start. With none configured, refresh fails closed and
+  analysis remains readable.
+
+Portfolio targets, shared navigation, and consolidated finances are optional
+provider integrations. Their absence never prevents the standalone analysis,
+details, orders, or trading interface from loading.
+
 ## Market-data sources
 
 `--source auto` is the default. It prefers Schwab for non-crypto tickers when a
@@ -212,8 +246,9 @@ It requires `TRADILITY_HOLDINGS_FILE` and accepts:
 - `TRADILITY_PROFILE_MAX_AGE_DAYS` (default: `30`)
 - `TRADILITY_PROFILE_WORKERS` (default: `4`)
 
-Clockwork owns the corresponding user-level systemd schedule. The wrapper uses
-an output lock so a manual refresh cannot overlap the scheduled run.
+The wrapper uses an output lock so a manual refresh cannot overlap the
+scheduled run. It can be scheduled directly with cron or systemd; Clockwork is
+one optional scheduler and portal integration rather than a runtime dependency.
 
 ## Crypto Tickers
 
