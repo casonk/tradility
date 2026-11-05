@@ -275,6 +275,7 @@
     .detail-title { flex: 1; min-width: 0; }
     .detail-ticker { font: 800 24px var(--mono); letter-spacing: 0.6px; }
     .detail-name { color: var(--muted-fg); font-size: 12px; }
+    .detail-price .detail-price-close { font-size:11px; font-weight:400; color:var(--muted); }
     .detail-price { font-size: 22px; font-weight: 750; white-space: nowrap; }
     .accounts-panel { margin: 8px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
     .accounts-panel > summary { cursor: pointer; padding: 8px 12px; font-weight: 700; font-size: 13px; }
@@ -1469,7 +1470,8 @@
     document.getElementById('detail-dialog-title').textContent = t.ticker || 'Stock details';
     document.getElementById('detail-dialog-name').textContent =
       [companyName, t.asset_class].filter(Boolean).join(' · ');
-    document.getElementById('detail-dialog-price').textContent = fmtPrice(t.last_price);
+    paintDetailPrice();
+    loadLiveMark();
 
     document.getElementById('detail-content').innerHTML = `
       <div class="detail-layout">
@@ -1626,6 +1628,10 @@
     const points = (detailRecord && detailRecord.price_history || [])
       .filter(point => point && point.date && Number.isFinite(Number(point.close)))
       .map(point => ({date: new Date(`${point.date}T00:00:00Z`), close: Number(point.close)}));
+    if (points.length && liveMark && detailRecord && liveMark.ticker === detailRecord.ticker
+        && liveMark.day > lastCloseDay()) {
+      points.push({date: new Date(`${liveMark.day}T00:00:00Z`), close: liveMark.price, live: true});
+    }
     if (!points.length || detailRange === '5y') return points;
     const end = new Date(points[points.length - 1].date);
     const start = new Date(end);
@@ -2329,6 +2335,50 @@
   // The default order: a good-till-cancelled limit at the policy's offset from the live mark
   // (below it for a buy, above it for a sell). Editable; it refills when the side changes.
   let tradeQuote = null;
+
+  // The chart's bars are daily closes from the last scheduled analysis, so on its own it can lag the
+  // market by a session or more. The live mark (same quote the order ticket uses) is drawn as a final,
+  // clearly labelled point; when no quote is available the chart simply shows the stored closes.
+  let liveMark = null;
+  async function loadLiveMark() {
+    const ticker = detailTicker;
+    liveMark = null;
+    try {
+      const res = await fetch(`/api/tradility-trade/quote/${encodeURIComponent(ticker)}`);
+      const data = await res.json();
+      if (detailTicker !== ticker || !res.ok || !data.ok || !Number.isFinite(Number(data.mark))) return;
+      liveMark = {ticker, price: Number(data.mark), day: new Date().toISOString().slice(0, 10)};
+    } catch (err) {
+      return;
+    }
+    paintDetailPrice();
+    drawDetailChart();
+  }
+
+  function lastCloseDay() {
+    const history = (detailRecord && detailRecord.price_history) || [];
+    return history.length ? String(history[history.length - 1].date) : '';
+  }
+
+  function paintDetailPrice() {
+    const box = document.getElementById('detail-dialog-price');
+    if (!box || !detailRecord) return;
+    if (!liveMark || liveMark.ticker !== detailRecord.ticker) {
+      box.textContent = fmtPrice(detailRecord.last_price);
+      return;
+    }
+    const close = detailRecord.last_price;
+    box.textContent = `${fmtPrice(liveMark.price)} live`;
+    box.title = close != null ? `Last close ${fmtPrice(close)} on ${lastCloseDay()}` : '';
+    if (close != null && Number(close) > 0) {
+      const change = (liveMark.price - Number(close)) / Number(close) * 100;
+      const note = document.createElement('div');
+      note.className = 'detail-price-close';
+      note.textContent = `close ${fmtPrice(close)} · ${lastCloseDay()} · ${change >= 0 ? '+' : ''}${change.toFixed(1)}%`;
+      box.append(note);
+    }
+  }
+
   async function loadQuote() {
     const ticker = detailTicker;
     try {
@@ -2731,6 +2781,12 @@
     ctx.globalAlpha = 1; ctx.beginPath();
     points.forEach((point, index) => index ? ctx.lineTo(x(point), y(point)) : ctx.moveTo(x(point), y(point)));
     ctx.strokeStyle = line; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+    const tail = points[points.length - 1];
+    if (tail.live) {
+      ctx.beginPath(); ctx.arc(x(tail), y(tail), 4, 0, Math.PI * 2);
+      ctx.fillStyle = line; ctx.fill();
+      ctx.strokeStyle = styles.getPropertyValue('--bg').trim() || '#0d1117'; ctx.lineWidth = 2; ctx.stroke();
+    }
 
     const accent = styles.getPropertyValue('--accent').trim() || '#58a6ff';
     const levelY = price => pad.top + (max - price) / Math.max(0.000001, max - min) * plotH;
