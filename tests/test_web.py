@@ -182,3 +182,22 @@ def test_detail_chart_overlays_the_live_quote_on_stale_closes(web_client):
     # labelled point beside the stored close.
     assert "loadLiveMark" in page and "/api/tradility-trade/quote/" in page
     assert "detail-price-close" in page and "live: true" in page
+
+
+def test_live_quotes_cover_every_ticker_and_are_shared_between_callers(web_client, monkeypatch):
+    client, _ = web_client
+    calls = []
+
+    def fake_trader(app, method, path, body=None):
+        calls.append(path)
+        return 200, {"ok": True, "as_of": "2026-11-05T14:00:00+00:00", "quotes": {"AAPL": 211.5}}
+
+    monkeypatch.setattr("tradility.web._trader_call", fake_trader)
+    first = client.get("/api/tradility-quotes").get_json()
+    assert first["ok"] and first["quotes"] == {"AAPL": 211.5}
+    assert calls and calls[0].startswith("/quotes?symbols=") and "AAPL" in calls[0]
+    client.get("/api/tradility-quotes")
+    assert len(calls) == 1  # a second poll inside the cache window never reaches the broker
+
+    page = client.get("/").get_data(as_text=True)
+    assert 'id="live-select"' in page and "/api/tradility-quotes" in page
