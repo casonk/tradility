@@ -260,12 +260,18 @@ before that field existed update after the next nightly run). Fundamentals stay 
 Broker orders are refreshed separately by `scripts/run_orders_refresh.sh`: the last
 `TRADILITY_ORDERS_RECENT_DAYS` (default 60) of Schwab orders are merged into the export by order id
 and the Binance.US history is re-read, in parallel, so a fill appears in minutes. Example user units
-are in `docs/systemd/` (every five minutes during weekday extended hours, hourly otherwise):
+are in `docs/systemd/` (every ten minutes during weekday extended hours, hourly otherwise):
 
 ```bash
 cp docs/systemd/tradility-orders.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload && systemctl --user enable --now tradility-orders.timer
 ```
+
+Schwab rotates the OAuth refresh token on every exchange and revokes it if an old one is replayed, so
+the token command is never run per request: each process runs it at most once every 20 minutes (an
+access token lasts 30), a lock serializes processes, and a failure is not retried for a minute. If the
+credential is revoked (HTTP 400 "invalid, expired or revoked"), re-authorize it in the portfolio's
+Schwab OAuth flow; Tradility only reports "Schwab token command failed".
 
 ## Crypto Tickers
 
