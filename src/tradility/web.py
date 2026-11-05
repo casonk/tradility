@@ -93,7 +93,8 @@ def _trader_call(
 def _analysis(app: Flask) -> dict[str, Any]:
     path = app.config["ANALYSIS_FILE"]
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        # Older exports may hold bare NaN, which is not JSON and breaks Safari; read it as null.
+        data = json.loads(path.read_text(encoding="utf-8"), parse_constant=lambda _name: None)
     except FileNotFoundError as exc:
         raise LookupError("Tradility analysis file not found") from exc
     except (OSError, ValueError) as exc:

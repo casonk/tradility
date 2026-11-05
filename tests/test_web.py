@@ -234,3 +234,15 @@ def test_live_quotes_carry_indicators_moved_by_the_live_price_and_bars_stay_priv
     listing = client.get("/api/tradility-analysis").get_json()["tickers"][0]
     detail = client.get("/api/tradility-analysis/aapl").get_json()["ticker"]
     assert "live_bars" not in listing and "live_bars" not in detail
+
+
+def test_an_analysis_file_with_bare_nan_is_served_as_strict_json(web_client):
+    client, tmp = web_client
+    path = tmp / "analysis.json"
+    text = path.read_text(encoding="utf-8").replace(
+        '"volume": [1000.0', '"volume": [NaN, 1000.0', 1
+    )
+    path.write_text(text, encoding="utf-8")
+    for url in ("/api/tradility-analysis", "/api/tradility-analysis/aapl"):
+        body = client.get(url).get_data(as_text=True)
+        json.loads(body, parse_constant=lambda name: (_ for _ in ()).throw(ValueError(name)))
