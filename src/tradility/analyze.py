@@ -166,12 +166,17 @@ def live_bars(df: pd.DataFrame) -> dict[str, Any]:
     """The recent bars the live view needs to move the indicators with a live price."""
     tail = df.tail(LIVE_BARS)
     recent = df.tail(LIVE_VWAP_BARS)
+    # Some sources leave a bar's high, low or volume empty; JSON has no NaN, so a missing high or low
+    # falls back to that bar's close and a missing volume counts as none.
+    high = recent["High"].fillna(recent["Close"])
+    low = recent["Low"].fillna(recent["Close"])
+    volume = recent["Volume"].fillna(0)
     return {
         "date": tail.index[-1].date().isoformat(),
         "close": [round(float(v), 4) for v in tail["Close"]],
-        "high": [round(float(v), 4) for v in recent["High"]],
-        "low": [round(float(v), 4) for v in recent["Low"]],
-        "volume": [round(float(v), 2) for v in recent["Volume"]],
+        "high": [round(float(v), 4) for v in high],
+        "low": [round(float(v), 4) for v in low],
+        "volume": [round(float(v), 2) for v in volume],
     }
 
 

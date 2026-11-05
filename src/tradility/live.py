@@ -19,6 +19,14 @@ def today_dates() -> set[str]:
     return {now.date().isoformat(), now.astimezone(NEW_YORK).date().isoformat()}
 
 
+def _number(value: Any, default: float = float("nan")) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number == number else default
+
+
 def live_indicators(
     record: dict[str, Any],
     price: float,
@@ -34,8 +42,13 @@ def live_indicators(
     bars = record.get("live_bars")
     if not isinstance(bars, dict) or not bars.get("close") or not price > 0:
         return None
-    close = [float(v) for v in bars["close"]]
-    high, low, volume = (list(map(float, bars.get(k) or [])) for k in ("high", "low", "volume"))
+    close = [float(v) for v in bars["close"] if v is not None]
+    high, low, volume = ([_number(v) for v in bars.get(k) or []] for k in ("high", "low", "volume"))
+    # an exported bar may lack a high, low or volume (written as null): use its close, and no volume
+    for arrays in (high, low):
+        for i, value in enumerate(arrays):
+            arrays[i] = _number(value, close[len(close) - len(arrays) + i])
+    volume = [_number(v, 0.0) for v in volume]
     day = day or {}
     if bars.get("date") in (today if today is not None else today_dates()):
         close[-1] = price
