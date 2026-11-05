@@ -843,6 +843,8 @@
     csrfToken = data.csrf_token || csrfToken;
     artifactVersion = data.artifact_version || '';
     allTickers = data.tickers || [];
+    for (const t of allTickers) t.close_price = t.last_price;  // the stored close, before any live overlay
+    overlayLive();
     if (data.generated_at) {
       const d = new Date(data.generated_at);
       const meta = document.getElementById('meta-generated');
@@ -2363,7 +2365,7 @@
   // signals (RSI, VWAP, trend) stay on closes. It pauses while the tab is hidden.
   const LIVE_KEY = 'tradility-live-seconds';
   const LIVE_CHOICES = [0, 5, 15, 30, 60, 300];
-  let liveQuotes = {}, liveSeconds = 30, liveTimer = null, liveAsOf = '', liveError = '';
+  let liveQuotes = {}, liveIndicators = {}, liveSeconds = 30, liveTimer = null, liveAsOf = '', liveError = '';
 
   function livePrice(t) {
     const p = liveQuotes[t.ticker];
@@ -2373,7 +2375,7 @@
   function cardPriceHtml(t) {
     const live = livePrice(t);
     if (live === null) return t.last_price != null ? fmtPrice(t.last_price) : '—';
-    const close = Number(t.last_price);
+    const close = Number(t.close_price ?? t.last_price);
     if (!(close > 0)) return fmtPrice(live);
     const change = (live - close) / close * 100;
     const cls = change > 0 ? 'up' : change < 0 ? 'down' : '';
@@ -2389,13 +2391,18 @@
     box.textContent = liveAsOf ? `Live · ${new Date(liveAsOf).toLocaleTimeString()}` : 'Live · loading…';
   }
 
+  // Replace each record's price-dependent fields (price, RSI, VWAP, trend, rating) with the live ones
+  // the server computed from the stored bars; everything the grid and sorts read then follows.
+  function overlayLive() {
+    for (const t of allTickers) {
+      const fields = liveIndicators[t.ticker];
+      if (fields) Object.assign(t, fields);
+    }
+  }
+
   function applyLive() {
-    const byTicker = new Map(allTickers.map(t => [t.ticker, t]));
-    document.querySelectorAll('.ticker-card').forEach(card => {
-      const t = byTicker.get(card.dataset.ticker);
-      const price = card.querySelector('.card-price');
-      if (t && price) price.innerHTML = cardPriceHtml(t);
-    });
+    overlayLive();
+    renderGrid();
     if (detailRecord && livePrice(detailRecord) !== null) {
       liveMark = {ticker: detailRecord.ticker, price: livePrice(detailRecord), day: new Date().toISOString().slice(0, 10)};
       paintDetailPrice();
@@ -2409,6 +2416,7 @@
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
       liveQuotes = data.quotes || {};
+      liveIndicators = data.indicators || {};
       liveAsOf = data.as_of || new Date().toISOString();
       liveError = '';
       applyLive();

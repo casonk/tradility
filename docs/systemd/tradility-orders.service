@@ -1,0 +1,14 @@
+[Unit]
+Description=Refresh Tradility broker orders (recent Schwab days merged, Binance.US re-read)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Edit the path to this checkout; the credentials and TRADILITY_HOLDINGS_FILE come from the same
+# environment file the nightly analysis uses.
+WorkingDirectory=%h/git/util-repos/tradility
+EnvironmentFile=-%h/.config/tradility/scheduled.env
+ExecStart=/usr/bin/env bash %h/git/util-repos/tradility/scripts/run_orders_refresh.sh
+StandardOutput=journal
+StandardError=journal

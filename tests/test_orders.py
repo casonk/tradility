@@ -191,3 +191,49 @@ def test_a_symbol_binance_us_does_not_list_is_skipped_but_other_errors_still_fai
         assert exc.code == 401
     else:
         raise AssertionError("a 401 must not be swallowed")
+
+
+def test_a_recent_refresh_asks_schwab_for_one_window_and_merges_by_id():
+    urls = []
+    filled_now = {
+        **SCHWAB_OPEN,
+        "status": "FILLED",
+        "filledQuantity": 2,
+        "closeTime": "2026-10-31T15:00:00+0000",
+    }
+
+    def get(url, headers):
+        urls.append(url)
+        if url.endswith("accountNumbers"):
+            return [{"accountNumber": "1", "hashValue": "H1"}]
+        return [filled_now]
+
+    old = o.schwab_orders([SCHWAB_ORDER, SCHWAB_OPEN])
+    existing = {
+        "version": 1,
+        "generated_at": "2026-10-31T00:00:00+00:00",
+        "sources": {"schwab": {"ok": True, "orders": 2}},
+        "orders": old,
+    }
+    env = {"TRADILITY_SCHWAB_ACCESS_TOKEN": "tok"}
+    result = o.collect(
+        [], get=get, env=env, now=NOW, only=("schwab",), recent_days=60, existing=existing
+    )
+
+    assert len([u for u in urls if "/orders?" in u]) == 1  # one 60-day window, not seven
+    rows = {r["id"]: r for r in result["orders"]["AAPL"]}
+    assert rows["schwab-12"]["status"] == "filled"  # the open order was updated, not duplicated
+    assert "schwab-11" in rows and len(rows) == 2  # older history is kept
+    assert result["sources"]["schwab"]["orders"] == 2
+
+
+def test_a_recent_refresh_without_an_existing_export_falls_back_to_the_full_history():
+    urls = []
+
+    def get(url, headers):
+        urls.append(url)
+        return [{"accountNumber": "1", "hashValue": "H1"}] if url.endswith("accountNumbers") else []
+
+    env = {"TRADILITY_SCHWAB_ACCESS_TOKEN": "tok"}
+    o.collect([], get=get, env=env, now=NOW, only=("schwab",), recent_days=60, existing=None)
+    assert len([u for u in urls if "/orders?" in u]) == 7

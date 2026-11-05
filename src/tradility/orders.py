@@ -24,6 +24,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,7 @@ BINANCE_BASE = "https://api.binance.us"
 SCHWAB_WINDOW_DAYS = 60  # the orders endpoint takes at most a 60-day entered-time range
 QUOTES = ("USDT", "USDC", "USD")
 MAX_BINANCE_SYMBOLS = 120
+FETCH_WORKERS = 6  # the broker calls are independent GETs, so they run side by side
 
 Json = Any
 GetJson = Callable[[str, dict[str, str]], Json]
@@ -218,31 +220,43 @@ def binance_orders(raw: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]
 def fetch_schwab(
     token: str, get: GetJson, lookback_days: int = 365, now: datetime | None = None
 ) -> dict[str, list[dict[str, Any]]]:
-    """Every account's orders over *lookback_days*, in 60-day windows (read-only GETs)."""
+    """Every account's orders over *lookback_days*, in 60-day windows (read-only GETs, in parallel)."""
     now = now or datetime.now(UTC)
     headers = {"Authorization": f"Bearer {token}"}
     accounts = get(f"{SCHWAB_BASE}/trader/v1/accounts/accountNumbers", headers)
-    raw: list[dict[str, Any]] = []
+    floor = now - timedelta(days=lookback_days)
+    jobs: list[tuple[str, str, datetime, datetime]] = []
     for account in accounts if isinstance(accounts, list) else []:
         digest = str(account.get("hashValue", ""))
         if not digest:
             continue
         mask = str(account.get("accountNumber", ""))[-4:]
         end = now
-        floor = now - timedelta(days=lookback_days)
         while end > floor:
             start = max(floor, end - timedelta(days=SCHWAB_WINDOW_DAYS))
-            query = urlencode(
-                {
-                    "fromEnteredTime": start.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-                    "toEnteredTime": end.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-                    "maxResults": 3000,
-                }
-            )
-            page = get(f"{SCHWAB_BASE}/trader/v1/accounts/{digest}/orders?{query}", headers)
-            if isinstance(page, list):
-                raw.extend({**o, "_account": mask} for o in page if isinstance(o, dict))
+            jobs.append((digest, mask, start, end))
             end = start
+
+    def window(job: tuple[str, str, datetime, datetime]) -> list[dict[str, Any]]:
+        digest, mask, start, end = job
+        query = urlencode(
+            {
+                "fromEnteredTime": start.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                "toEnteredTime": end.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                "maxResults": 3000,
+            }
+        )
+        page = get(f"{SCHWAB_BASE}/trader/v1/accounts/{digest}/orders?{query}", headers)
+        return (
+            [{**o, "_account": mask} for o in page if isinstance(o, dict)]
+            if isinstance(page, list)
+            else []
+        )
+
+    raw: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as pool:
+        for rows in pool.map(window, jobs):
+            raw.extend(rows)
     return schwab_orders(raw)
 
 
@@ -272,17 +286,23 @@ def fetch_binance(
     opened = signed("/api/v3/openOrders")
     if isinstance(opened, list):
         raw.extend(o for o in opened if isinstance(o, dict))
-    skipped = 0
-    for symbol in symbols[:MAX_BINANCE_SYMBOLS]:
+
+    def history_of(symbol: str) -> list[dict[str, Any]] | None:
         try:
             history = signed("/api/v3/allOrders", symbol=symbol, limit="1000")
         except HTTPError as exc:
             if exc.code != 400:
                 raise
-            skipped += 1
-            continue
-        if isinstance(history, list):
-            raw.extend(o for o in history if isinstance(o, dict))
+            return None  # a coin Binance.US does not list
+        return [o for o in history if isinstance(o, dict)] if isinstance(history, list) else []
+
+    skipped = 0
+    with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as pool:
+        for rows in pool.map(history_of, symbols[:MAX_BINANCE_SYMBOLS]):
+            if rows is None:
+                skipped += 1
+            else:
+                raw.extend(rows)
     unique = {(o.get("symbol"), o.get("orderId")): o for o in raw}
     return binance_orders(list(unique.values())), skipped
 
@@ -324,14 +344,37 @@ def binance_credentials(env: dict[str, str] | None = None) -> tuple[str, str, st
 # -- the export ---------------------------------------------------------------------------------
 
 
+def merge_by_id(
+    orders: dict[str, list[dict[str, Any]]], fresh: dict[str, list[dict[str, Any]]], source: str
+) -> int:
+    """Fold freshly fetched orders into ``orders``, replacing any with the same id; returns the
+    number of ``source`` orders now held."""
+    for ticker, rows in fresh.items():
+        mine = orders.setdefault(ticker, [])
+        by_id = {r.get("id"): i for i, r in enumerate(mine)}
+        for row in rows:
+            if row.get("id") in by_id:
+                mine[by_id[row["id"]]] = row
+            else:
+                mine.append(row)
+    return sum(1 for rows in orders.values() for r in rows if r.get("source") == source)
+
+
 def collect(
     holdings: list[dict[str, Any]],
     get: GetJson = http_get_json,
     env: dict[str, str] | None = None,
     now: datetime | None = None,
     only: tuple[str, ...] = ("schwab", "binance"),
+    recent_days: int | None = None,
+    existing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Run each source; a failing one is recorded (class name only) and does not stop the other."""
+    """Run each source; a failing one is recorded (class name only) and does not stop the other.
+
+    With ``recent_days`` and an ``existing`` export, Schwab is asked only for that many recent days
+    and the result is merged into the existing orders by id (so an open order that filled is
+    updated); a source that fails or is not asked keeps what the export already had.
+    """
     env = os.environ if env is None else env
     now = now or datetime.now(UTC)
     sources: dict[str, dict[str, Any]] = {}
@@ -342,6 +385,12 @@ def collect(
             orders.setdefault(ticker, []).extend(rows)
         return sum(len(rows) for rows in found.values())
 
+    recent = bool(recent_days and isinstance(existing, dict) and existing.get("orders"))
+    if recent:
+        for ticker, rows in existing["orders"].items():
+            orders[ticker] = [dict(r) for r in rows]
+        sources = {k: dict(v) for k, v in (existing.get("sources") or {}).items()}
+
     if "schwab" in only:
         token = resolve_access_token(
             env.get("TRADILITY_SCHWAB_ACCESS_TOKEN", ""),
@@ -351,10 +400,14 @@ def collect(
             sources["schwab"] = {"ok": False, "error": token.error}
         else:
             try:
-                sources["schwab"] = {
-                    "ok": True,
-                    "orders": merge(fetch_schwab(token.token, get, now=now)),
-                }
+                if recent:
+                    fresh = fetch_schwab(token.token, get, lookback_days=recent_days, now=now)
+                    sources["schwab"] = {"ok": True, "orders": merge_by_id(orders, fresh, "schwab")}
+                else:
+                    sources["schwab"] = {
+                        "ok": True,
+                        "orders": merge(fetch_schwab(token.token, get, now=now)),
+                    }
             except (HTTPError, URLError, OSError, ValueError) as exc:
                 sources["schwab"] = {"ok": False, "error": f"request failed: {type(exc).__name__}"}
     if "binance" in only:
@@ -364,6 +417,9 @@ def collect(
         else:
             try:
                 found, skipped = fetch_binance(key, secret, held_binance_symbols(holdings), get)
+                if recent:  # the coin history is fetched whole, so it replaces what was stored
+                    for rows in orders.values():
+                        rows[:] = [r for r in rows if r.get("source") != "binance"]
                 sources["binance"] = {
                     "ok": True,
                     "orders": merge(found),
@@ -371,6 +427,7 @@ def collect(
                 }
             except (HTTPError, URLError, OSError, ValueError) as exc:
                 sources["binance"] = {"ok": False, "error": f"request failed: {type(exc).__name__}"}
+    orders = {t: rows for t, rows in orders.items() if rows}
     for rows in orders.values():
         rows.sort(key=lambda o: o["date"], reverse=True)
     return {
@@ -401,9 +458,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--source", action="append", choices=("schwab", "binance"), help="only these"
     )
+    parser.add_argument(
+        "--recent-days",
+        type=int,
+        metavar="N",
+        help="ask Schwab only for the last N days and merge them into the existing --output",
+    )
     args = parser.parse_args(argv)
     holdings = json.loads(Path(args.holdings).read_text(encoding="utf-8")).get("holdings", [])
-    result = collect(holdings, only=tuple(args.source or ("schwab", "binance")))
+    existing = None
+    if args.recent_days:
+        try:
+            existing = json.loads(Path(args.output).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            existing = None  # nothing to merge into yet: fetch it all
+    result = collect(
+        holdings,
+        only=tuple(args.source or ("schwab", "binance")),
+        recent_days=args.recent_days,
+        existing=existing,
+    )
     write_private(Path(args.output), result)
     for name, info in result["sources"].items():
         print(

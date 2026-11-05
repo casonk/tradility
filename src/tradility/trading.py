@@ -350,6 +350,14 @@ class Audit:
 # -- HTTP ---------------------------------------------------------------------------------------
 
 
+def _positive(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) and number > 0 else None
+
+
 def http_send(
     method: str, url: str, headers: dict[str, str], body: bytes | None
 ) -> tuple[int, dict[str, str], Any]:
@@ -434,9 +442,11 @@ class SchwabTrader:
         self._hashes[mask] = str(matches[0]["hashValue"])
         return self._hashes[mask]
 
-    def last_prices(self, tickers: list[str], chunk: int = 100) -> dict[str, float]:
-        """Current price for many symbols, a few requests; symbols with no usable price are omitted."""
-        prices: dict[str, float] = {}
+    def last_quotes(self, tickers: list[str], chunk: int = 100) -> dict[str, dict[str, float]]:
+        """Price (and the session's high, low and volume when given) for many symbols.
+
+        A few requests for all of them; symbols with no usable price are omitted."""
+        found: dict[str, dict[str, float]] = {}
         for start in range(0, len(tickers), chunk):
             query = urlencode(
                 {"symbols": ",".join(tickers[start : start + chunk]), "fields": "quote"}
@@ -449,14 +459,23 @@ class SchwabTrader:
             for symbol, entry in payload.items():
                 quote = entry.get("quote", {}) if isinstance(entry, dict) else {}
                 for field_name in ("mark", "lastPrice", "nAV"):  # funds report a NAV, not a mark
-                    try:
-                        price = float(quote[field_name])
-                    except (KeyError, TypeError, ValueError):
-                        continue
-                    if math.isfinite(price) and price > 0:
-                        prices[str(symbol).upper()] = price
+                    price = _positive(quote.get(field_name))
+                    if price is not None:
+                        row = {"price": price}
+                        for key, source in (
+                            ("high", "highPrice"),
+                            ("low", "lowPrice"),
+                            ("volume", "totalVolume"),
+                        ):
+                            value = _positive(quote.get(source))
+                            if value is not None:
+                                row[key] = value
+                        found[str(symbol).upper()] = row
                         break
-        return prices
+        return found
+
+    def last_prices(self, tickers: list[str], chunk: int = 100) -> dict[str, float]:
+        return {t: q["price"] for t, q in self.last_quotes(tickers, chunk).items()}
 
     def last_price(self, ticker: str) -> float:
         query = urlencode({"symbols": ticker, "fields": "quote"})
@@ -602,6 +621,9 @@ class BinanceTrader:
     @staticmethod
     def symbol(ticker: str) -> str:
         return ticker.removesuffix("-USD") + "USD"
+
+    def last_quotes(self, tickers: list[str]) -> dict[str, dict[str, float]]:
+        return {t: {"price": p} for t, p in self.last_prices(tickers).items()}
 
     def last_prices(self, tickers: list[str]) -> dict[str, float]:
         """Current price for many coins from one all-symbols request; unlisted coins are omitted."""
@@ -945,20 +967,25 @@ class Trader:
             "binance": [t for t in wanted if t.endswith("-USD")],
             "schwab": [t for t in wanted if not t.endswith("-USD")],
         }
-        prices: dict[str, float] = {}
+        found: dict[str, dict[str, float]] = {}
         for name, group in groups.items():
             if not group:
                 continue
             try:
                 if name in self.policy.brokers and name in self.brokers:
-                    prices.update(self.brokers[name]().last_prices(group))
+                    found.update(self.brokers[name]().last_quotes(group))
                 elif name == "binance":
                     # Coin prices are public: show them even when Binance trading is not enabled.
-                    prices.update(BinanceTrader("", "", http_send).last_prices(group))
+                    found.update(BinanceTrader("", "", http_send).last_quotes(group))
             except (TradingError, OSError, ValueError):
                 continue  # one broker failing must not hide the other's prices
         return {
-            "quotes": prices,
+            "quotes": {t: q["price"] for t, q in found.items()},
+            "sessions": {
+                t: {k: v for k, v in q.items() if k != "price"}
+                for t, q in found.items()
+                if len(q) > 1
+            },
             "as_of": datetime.now(UTC).isoformat(timespec="seconds"),
             "requested": len(wanted),
         }

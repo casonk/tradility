@@ -1,0 +1,79 @@
+"""Live indicators: the stored bars plus a live price give the numbers a fresh run would."""
+
+import pandas as pd
+import pytest
+
+from tradility.analyze import indicator_fields, live_bars
+from tradility.live import live_indicators
+
+
+def _frame(days: int = 400) -> pd.DataFrame:
+    index = pd.bdate_range("2025-01-01", periods=days)
+    close = pd.Series([50 + (i % 17) * 0.7 + i * 0.05 for i in range(days)], index=index)
+    return pd.DataFrame(
+        {
+            "Open": close,
+            "High": close + 1,
+            "Low": close - 1,
+            "Close": close,
+            "Volume": 1000 + close * 3,
+        }
+    )
+
+
+def _record(df: pd.DataFrame) -> dict:
+    fields = indicator_fields(df["Close"], df["High"], df["Low"], df["Volume"])
+    return {"ticker": "T", "live_bars": live_bars(df), **fields}
+
+
+def test_a_live_bar_for_a_new_day_matches_a_full_recompute():
+    df = _frame()
+    record = _record(df)
+    price = 61.25
+    day = {"high": 62.0, "low": 60.0, "volume": 5000.0}
+    live = live_indicators(record, price, day, today={"2099-01-01"})
+
+    index = df.index.append(pd.DatetimeIndex([df.index[-1] + pd.Timedelta(days=1)]))
+    grown = pd.concat(
+        [
+            df,
+            pd.DataFrame(
+                {"Open": price, "High": 62.0, "Low": 60.0, "Close": price, "Volume": 5000.0},
+                index=[index[-1]],
+            ),
+        ]
+    )
+    full = indicator_fields(grown["Close"], grown["High"], grown["Low"], grown["Volume"])
+    assert live["last_price"] == price
+    for key in ("rsi_14", "vwap_20", "sma_50", "sma_200"):
+        assert live[key] == pytest.approx(full[key], abs=1e-3), key  # bars are stored to 4 places
+    for key in ("long_term_trend", "technical_rating", "vwap_20_signal", "rsi_14_signal"):
+        assert live[key] == full[key], key
+    for kind, values in full["indicator_variants"].items():
+        assert live["indicator_variants"][kind] == pytest.approx(values, abs=1e-2)
+
+
+def test_an_in_progress_bar_dated_today_is_replaced_not_duplicated():
+    df = _frame()
+    record = _record(df)
+    today = {record["live_bars"]["date"]}
+    live = live_indicators(record, 70.0, today=today)
+    shorter = df.copy()
+    shorter.iloc[-1, shorter.columns.get_loc("Close")] = 70.0
+    shorter.iloc[-1, shorter.columns.get_loc("High")] = max(float(df["High"].iloc[-1]), 70.0)
+    full = indicator_fields(shorter["Close"], shorter["High"], shorter["Low"], shorter["Volume"])
+    assert live["rsi_14"] == pytest.approx(full["rsi_14"], abs=1e-2)
+    assert live["sma_50"] == pytest.approx(full["sma_50"], abs=1e-3)
+
+
+def test_without_session_volume_vwap_keeps_its_stored_value_but_the_signal_follows_price():
+    df = _frame()
+    record = _record(df)
+    live = live_indicators(record, 200.0, today={"2099-01-01"})
+    assert live["vwap_20"] == record["vwap_20"]
+    assert live["vwap_20_signal"] == "above"  # 200 is far over the stored VWAP
+    assert live["rsi_14"] != record["rsi_14"]
+
+
+def test_records_without_stored_bars_have_no_live_indicators():
+    assert live_indicators({"ticker": "OLD"}, 10.0) is None

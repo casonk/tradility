@@ -108,6 +108,73 @@ def _technical_rating(
     return rating, score, components
 
 
+LIVE_BARS = 320  # enough for the longest SMA (300) and for Wilder smoothing to settle
+LIVE_VWAP_BARS = max(VWAP_VARIANTS) + 10
+
+
+def indicator_fields(
+    close: pd.Series,
+    high: pd.Series | None,
+    low: pd.Series | None,
+    volume: pd.Series | None,
+    fallback_vwap: dict[str, float | None] | None = None,
+) -> dict[str, Any]:
+    """Every indicator field of a ticker record, from its bars (the last bar may be provisional).
+
+    Used by the scheduled analysis on real bars and by the live view on stored bars plus the live
+    price. Without high/low/volume the VWAP values come from ``fallback_vwap`` (the stored ones) and
+    only the price side of the VWAP signal moves.
+    """
+    last_price = _safe_float(close.iloc[-1], 4)
+    rsi_val = _safe_float(rsi(close, period=RSI_PERIOD).iloc[-1], 2)
+    have_volume = high is not None and low is not None and volume is not None
+
+    def vwap_at(period: int) -> float | None:
+        if have_volume:
+            return _safe_float(vwap(high, low, close, volume, period=period).iloc[-1], 4)
+        return _safe_float((fallback_vwap or {}).get(str(period)), 4)
+
+    vwap_val = vwap_at(VWAP_PERIOD)
+    sma_short = _safe_float(sma(close, SMA_SHORT_PERIOD).iloc[-1], 4)
+    sma_long = _safe_float(sma(close, SMA_LONG_PERIOD).iloc[-1], 4)
+    rsi_value_signal = rsi_signal(rsi_val)
+    vwap_value_signal = vwap_signal(last_price, vwap_val)
+    trend_signal = long_term_trend_signal(last_price, sma_short, sma_long)
+    technical_rating, technical_score, technical_components = _technical_rating(
+        rsi_value_signal, vwap_value_signal, trend_signal
+    )
+    return {
+        f"rsi_{RSI_PERIOD}": rsi_val,
+        f"rsi_{RSI_PERIOD}_signal": rsi_value_signal,
+        f"vwap_{VWAP_PERIOD}": vwap_val,
+        f"vwap_{VWAP_PERIOD}_signal": vwap_value_signal,
+        f"sma_{SMA_SHORT_PERIOD}": sma_short,
+        f"sma_{SMA_LONG_PERIOD}": sma_long,
+        "long_term_trend": trend_signal,
+        "indicator_variants": {
+            "rsi": {str(n): _safe_float(rsi(close, period=n).iloc[-1], 2) for n in RSI_VARIANTS},
+            "vwap": {str(n): vwap_at(n) for n in VWAP_VARIANTS},
+            "sma": {str(n): _safe_float(sma(close, n).iloc[-1], 4) for n in SMA_VARIANTS},
+        },
+        "technical_rating": technical_rating,
+        "technical_score": technical_score,
+        "technical_components": technical_components,
+    }
+
+
+def live_bars(df: pd.DataFrame) -> dict[str, Any]:
+    """The recent bars the live view needs to move the indicators with a live price."""
+    tail = df.tail(LIVE_BARS)
+    recent = df.tail(LIVE_VWAP_BARS)
+    return {
+        "date": tail.index[-1].date().isoformat(),
+        "close": [round(float(v), 4) for v in tail["Close"]],
+        "high": [round(float(v), 4) for v in recent["High"]],
+        "low": [round(float(v), 4) for v in recent["Low"]],
+        "volume": [round(float(v), 2) for v in recent["Volume"]],
+    }
+
+
 def _ticker_record(
     ticker: str,
     result: OHLCVResult,
@@ -138,34 +205,7 @@ def _ticker_record(
     last_price = _safe_float(df["Close"].iloc[-1], 4)
     period_start = df.index[0].date().isoformat()
     period_end = df.index[-1].date().isoformat()
-
-    rsi_series = rsi(df["Close"], period=RSI_PERIOD)
-    rsi_val = _safe_float(rsi_series.iloc[-1], 2)
-
-    vwap_series = vwap(df["High"], df["Low"], df["Close"], df["Volume"], period=VWAP_PERIOD)
-    vwap_val = _safe_float(vwap_series.iloc[-1], 4)
-
-    sma_short = _safe_float(sma(df["Close"], SMA_SHORT_PERIOD).iloc[-1], 4)
-    sma_long = _safe_float(sma(df["Close"], SMA_LONG_PERIOD).iloc[-1], 4)
-    rsi_value_signal = rsi_signal(rsi_val)
-    vwap_value_signal = vwap_signal(last_price, vwap_val)
-    trend_signal = long_term_trend_signal(last_price, sma_short, sma_long)
-    technical_rating, technical_score, technical_components = _technical_rating(
-        rsi_value_signal,
-        vwap_value_signal,
-        trend_signal,
-    )
-
-    variants = {
-        "rsi": {str(n): _safe_float(rsi(df["Close"], period=n).iloc[-1], 2) for n in RSI_VARIANTS},
-        "vwap": {
-            str(n): _safe_float(
-                vwap(df["High"], df["Low"], df["Close"], df["Volume"], period=n).iloc[-1], 4
-            )
-            for n in VWAP_VARIANTS
-        },
-        "sma": {str(n): _safe_float(sma(df["Close"], n).iloc[-1], 4) for n in SMA_VARIANTS},
-    }
+    indicators = indicator_fields(df["Close"], df["High"], df["Low"], df["Volume"])
 
     range_start = pd.Timestamp(df.index[-1]) - pd.DateOffset(years=1)
     range_frame = df.loc[df.index >= range_start]
@@ -186,13 +226,7 @@ def _ticker_record(
             "last_price": last_price,
             "period_start": period_start,
             "period_end": period_end,
-            f"rsi_{RSI_PERIOD}": rsi_val,
-            f"rsi_{RSI_PERIOD}_signal": rsi_value_signal,
-            f"vwap_{VWAP_PERIOD}": vwap_val,
-            f"vwap_{VWAP_PERIOD}_signal": vwap_value_signal,
-            f"sma_{SMA_SHORT_PERIOD}": sma_short,
-            f"sma_{SMA_LONG_PERIOD}": sma_long,
-            "long_term_trend": trend_signal,
+            **indicators,
             "returns": {
                 label: _period_return(df["Close"], offset)
                 for label, offset in RETURN_WINDOWS.items()
@@ -200,11 +234,8 @@ def _ticker_record(
             "high_52w": high_52w,
             "low_52w": low_52w,
             "range_position_52w": range_position,
-            "indicator_variants": variants,
-            "technical_rating": technical_rating,
-            "technical_score": technical_score,
-            "technical_components": technical_components,
             "price_history": _chart_history(df["Close"]),
+            "live_bars": live_bars(df),
         }
     )
     if result.fallback_reason:
