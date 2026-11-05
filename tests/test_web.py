@@ -173,3 +173,12 @@ def test_bad_analysis_and_tickers_are_reported_without_leaking_paths(tmp_path):
         and response.get_json()["error"] == "Tradility analysis file not found"
     )
     assert client.get("/api/tradility-analysis/not a ticker!").status_code == 404
+
+
+def test_detail_chart_overlays_the_live_quote_on_stale_closes(web_client):
+    client, _ = web_client
+    page = client.get("/").get_data(as_text=True)
+    # Daily closes lag the market, so the detail view fetches the live mark and draws it as a last,
+    # labelled point beside the stored close.
+    assert "loadLiveMark" in page and "/api/tradility-trade/quote/" in page
+    assert "detail-price-close" in page and "live: true" in page
