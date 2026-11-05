@@ -1,9 +1,9 @@
 [Unit]
-Description=Refresh Tradility broker orders every five minutes (extended hours on weekdays, hourly otherwise)
+Description=Refresh Tradility broker orders every ten minutes (extended hours on weekdays, hourly otherwise)
 
 [Timer]
 # Orders fill from 04:00 to 20:00 Eastern on weekdays; crypto trades around the clock.
-OnCalendar=Mon..Fri *-*-* 04..19:00/5:00
+OnCalendar=Mon..Fri *-*-* 04..19:00/10:00
 OnCalendar=*-*-* *:07:00
 Persistent=true
 Unit=tradility-orders.service
