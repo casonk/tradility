@@ -26,6 +26,8 @@ from typing import Any
 from flask import Flask, abort, jsonify, render_template, request, session
 
 from tradility import web_state
+from tradility.live import live_indicators
+from tradility.live import today_dates as live_today
 
 TICKER = re.compile(r"[A-Z0-9][A-Z0-9.^=-]{0,19}")
 TRADER_ACTIONS = ("preview", "confirm", "cancel")
@@ -199,6 +201,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
             if not isinstance(record, dict):
                 continue
             history = record.pop("price_history", [])
+            record.pop("live_bars", None)  # server-side input for live indicators only
             profile = record.pop("company_profile", {})
             record["detail_available"] = bool(history)
             record["profile_available"] = bool(
@@ -234,6 +237,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
             except (LookupError, RuntimeError) as exc:
                 return jsonify({"ok": False, "error": str(exc)}), 503
             symbols: dict[str, str] = {}
+            records: dict[str, dict[str, Any]] = {}
             for record in data.get("tickers", []):
                 if not isinstance(record, dict) or not record.get("ticker"):
                     continue
@@ -242,19 +246,32 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
                 if asset == "Options":
                     continue
                 symbols[f"{name}-USD" if asset == "Crypto" else name] = name
+                records[name] = record
             code, payload = _trader_call(
                 app, "GET", f"/quotes?{urllib.parse.urlencode({'symbols': ','.join(symbols)})}"
             )
             if code != 200 or not payload.get("ok"):
                 return jsonify(payload), code
+            quotes = {
+                symbols[sym]: price
+                for sym, price in (payload.get("quotes") or {}).items()
+                if sym in symbols
+            }
+            sessions = payload.get("sessions") or {}
+            indicators: dict[str, Any] = {}
+            today = live_today()
+            for sym, name in symbols.items():
+                price = quotes.get(name)
+                if price is None:
+                    continue
+                fields = live_indicators(records[name], price, sessions.get(sym), today)
+                if fields:
+                    indicators[name] = fields
             result = {
                 "ok": True,
                 "as_of": payload.get("as_of"),
-                "quotes": {
-                    symbols[sym]: price
-                    for sym, price in (payload.get("quotes") or {}).items()
-                    if sym in symbols
-                },
+                "quotes": quotes,
+                "indicators": indicators,
             }
             quote_cache.update(at=time.monotonic(), payload=result)
             return jsonify(result)
@@ -279,6 +296,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         )
         if record is None:
             return jsonify({"ok": False, "error": "Ticker not found"}), 404
+        record = {k: v for k, v in record.items() if k != "live_bars"}
         return jsonify(
             {
                 "ok": True,
