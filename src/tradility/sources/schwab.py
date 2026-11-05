@@ -7,9 +7,12 @@ governed credential pipeline. Token values are never logged or serialized.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import shlex
 import subprocess
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -38,6 +41,47 @@ class AccessTokenResolution:
     error: str = ""
 
 
+# Schwab rotates the refresh token on every exchange and revokes the whole family when an old one is
+# replayed, so token requests must never overlap or run needlessly. The command is therefore run at most
+# once per TOKEN_TTL_SECONDS in a process (an access token lasts 30 minutes), under a lock that also
+# serializes separate processes, and a failure is remembered briefly instead of being retried at once.
+# Nothing here is written to disk: only the lock file, which holds no secret.
+TOKEN_TTL_SECONDS = 20 * 60
+TOKEN_FAILURE_BACKOFF_SECONDS = 60
+_token_cache: dict[str, tuple[float, AccessTokenResolution]] = {}
+_token_thread_lock = threading.Lock()
+
+
+def _lock_path() -> str:
+    configured = os.environ.get("TRADILITY_TOKEN_LOCK", "").strip()
+    if configured:
+        return configured
+    state = os.environ.get("XDG_STATE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".local", "state"
+    )
+    return os.path.join(state, "tradility", "schwab-token.lock")
+
+
+@contextlib.contextmanager
+def _exchange_lock():
+    """Serialize token exchanges across processes (best effort where file locks exist)."""
+    handle = None
+    try:
+        import fcntl
+
+        path = _lock_path()
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        handle = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+        fcntl.flock(handle, fcntl.LOCK_EX)
+    except (ImportError, OSError):
+        handle = None
+    try:
+        yield
+    finally:
+        if handle is not None:
+            os.close(handle)  # closing releases the lock
+
+
 def resolve_access_token(
     explicit_token: str = "",
     token_command: str = "",
@@ -50,6 +94,19 @@ def resolve_access_token(
     command = token_command.strip()
     if not command:
         return AccessTokenResolution(error="Schwab access token is not configured")
+    with _token_thread_lock, _exchange_lock():
+        cached = _token_cache.get(command)
+        if cached is not None:
+            at, resolution = cached
+            ttl = TOKEN_FAILURE_BACKOFF_SECONDS if resolution.error else TOKEN_TTL_SECONDS
+            if time.monotonic() - at < ttl:
+                return resolution
+        resolution = _run_token_command(command, timeout_seconds)
+        _token_cache[command] = (time.monotonic(), resolution)
+        return resolution
+
+
+def _run_token_command(command: str, timeout_seconds: int) -> AccessTokenResolution:
     try:
         completed = subprocess.run(
             shlex.split(command),
