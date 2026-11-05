@@ -1,5 +1,6 @@
 """Order placement: the policy fails closed, orders need a preview and a typed confirmation."""
 
+import dataclasses
 import json
 import os
 from datetime import datetime
@@ -878,3 +879,42 @@ def test_the_service_serves_fidelity_tickets_and_lists_the_accounts_in_its_statu
     code, ticket = svc.handle("POST", "/fidelity/ticket", good, body)
     assert code == 200 and ticket["venue"] == "fidelity" and ticket["fields"][0][0] == "Account"
     assert svc.handle("POST", "/fidelity/ticket", {"Host": "evil.example"}, body)[0] == 403
+
+
+def test_quotes_fetch_many_tickers_in_few_requests_and_skip_unpriced_ones(tmp_path):
+    urls = []
+
+    def send(method, url, headers, body):
+        urls.append(url)
+        if "marketdata/v1/quotes" in url:
+            return (
+                200,
+                {},
+                {
+                    "AAA": {"quote": {"mark": 12.5, "lastPrice": 12.0}},
+                    "FUND": {"quote": {"nAV": 30.25}},
+                    "BAD": {"quote": {"mark": 0}},
+                },
+            )
+        if url.endswith("/api/v3/ticker/price"):
+            return (
+                200,
+                {},
+                [{"symbol": "BTCUSD", "price": "60000"}, {"symbol": "XXXUSD", "price": "1"}],
+            )
+        return 404, {}, {}
+
+    open_policy = dataclasses.replace(POLICY, tickers=frozenset({"*"}))
+    trader = t.Trader(
+        open_policy,
+        {
+            "schwab": lambda: t.SchwabTrader("tok", send),
+            "binance": lambda: t.BinanceTrader("KEY", "SECRET", send, clock=lambda: 1.0),
+        },
+        t.Audit(tmp_path / "a.jsonl"),
+    )
+    result = trader.quotes(["aaa", "FUND", "BAD", "BTC-USD", "NOPE-USD", "aaa"])
+    assert result["quotes"] == {"AAA": 12.5, "FUND": 30.25, "BTC-USD": 60000.0}
+    assert result["requested"] == 5
+    assert sum("marketdata/v1/quotes" in u for u in urls) == 1  # all stocks in one request
+    assert sum(u.endswith("/api/v3/ticker/price") for u in urls) == 1  # all coins in one request

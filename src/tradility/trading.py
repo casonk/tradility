@@ -434,6 +434,30 @@ class SchwabTrader:
         self._hashes[mask] = str(matches[0]["hashValue"])
         return self._hashes[mask]
 
+    def last_prices(self, tickers: list[str], chunk: int = 100) -> dict[str, float]:
+        """Current price for many symbols, a few requests; symbols with no usable price are omitted."""
+        prices: dict[str, float] = {}
+        for start in range(0, len(tickers), chunk):
+            query = urlencode(
+                {"symbols": ",".join(tickers[start : start + chunk]), "fields": "quote"}
+            )
+            status, _, payload = self.send(
+                "GET", f"{SCHWAB_BASE}/marketdata/v1/quotes?{query}", self.headers, None
+            )
+            if status != 200 or not isinstance(payload, dict):
+                continue
+            for symbol, entry in payload.items():
+                quote = entry.get("quote", {}) if isinstance(entry, dict) else {}
+                for field_name in ("mark", "lastPrice", "nAV"):  # funds report a NAV, not a mark
+                    try:
+                        price = float(quote[field_name])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if math.isfinite(price) and price > 0:
+                        prices[str(symbol).upper()] = price
+                        break
+        return prices
+
     def last_price(self, ticker: str) -> float:
         query = urlencode({"symbols": ticker, "fields": "quote"})
         status, _, payload = self.send(
@@ -578,6 +602,21 @@ class BinanceTrader:
     @staticmethod
     def symbol(ticker: str) -> str:
         return ticker.removesuffix("-USD") + "USD"
+
+    def last_prices(self, tickers: list[str]) -> dict[str, float]:
+        """Current price for many coins from one all-symbols request; unlisted coins are omitted."""
+        status, _, payload = self.send("GET", f"{BINANCE_BASE}/api/v3/ticker/price", {}, None)
+        if status != 200 or not isinstance(payload, list):
+            return {}
+        by_symbol: dict[str, float] = {}
+        for row in payload:
+            try:
+                price = float(row["price"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if math.isfinite(price) and price > 0:
+                by_symbol[str(row.get("symbol"))] = price
+        return {t: by_symbol[self.symbol(t)] for t in tickers if self.symbol(t) in by_symbol}
 
     def last_price(self, ticker: str) -> float:
         status, _, payload = self.send(
@@ -894,6 +933,30 @@ class Trader:
                 "after": after / total * 100 if total > 0 else None,
             },
             "total": total,
+        }
+
+    def quotes(self, tickers: list[str]) -> dict[str, Any]:
+        """Current prices for many tickers at once (read-only); unavailable ones are left out."""
+        wanted = list(dict.fromkeys(str(t).strip().upper() for t in tickers))
+        wanted = [t for t in wanted if TICKER.fullmatch(t) and self.policy.allows(t)]
+        if not self.policy.enabled:
+            raise TradingError("trading is turned off in the policy")
+        groups = {
+            "binance": [t for t in wanted if t.endswith("-USD")],
+            "schwab": [t for t in wanted if not t.endswith("-USD")],
+        }
+        prices: dict[str, float] = {}
+        for name, group in groups.items():
+            if not group or name not in self.policy.brokers or name not in self.brokers:
+                continue
+            try:
+                prices.update(self.brokers[name]().last_prices(group))
+            except (TradingError, OSError, ValueError):
+                continue  # one broker failing must not hide the other's prices
+        return {
+            "quotes": prices,
+            "as_of": datetime.now(UTC).isoformat(timespec="seconds"),
+            "requested": len(wanted),
         }
 
     def quote(self, ticker: str) -> dict[str, Any]:

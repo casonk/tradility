@@ -215,6 +215,11 @@
       font-size: 10px; color: var(--muted-fg); margin-bottom: 5px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    .live-status { font-size: 11px; color: var(--muted-fg); white-space: nowrap; }
+    .live-status.error { color: var(--red); }
+    .card-live-chg { margin-left: 6px; font-size: 11px; font-weight: 600; }
+    .card-live-chg.up { color: var(--green); }
+    .card-live-chg.down { color: var(--red); }
     .card-price { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
 
     .card-indicator {
@@ -483,6 +488,17 @@
     <option value="price-desc">Sort: price ↓</option>
     <option value="target-gap">Sort: furthest below target</option>
   </select>
+
+  <label class="controls-label" for="live-select" title="How often live prices are fetched for every ticker on this page">Live</label>
+  <select class="sort-select" id="live-select" onchange="setLiveInterval(this.value)" aria-label="Live price refresh rate">
+    <option value="0">Off</option>
+    <option value="5">Every 5 s</option>
+    <option value="15">Every 15 s</option>
+    <option value="30">Every 30 s</option>
+    <option value="60">Every minute</option>
+    <option value="300">Every 5 min</option>
+  </select>
+  <span class="live-status" id="live-status" aria-live="polite"></span>
 
   <button class="refresh-btn" id="refresh-btn" onclick="runRefresh()">
     <span class="refresh-icon">↻</span>
@@ -1134,7 +1150,7 @@
 
     tickers.sort((a, b) => {
       if (sort === 'ticker')      return a.ticker.localeCompare(b.ticker);
-      if (sort === 'price-desc')  return (b.last_price ?? 0) - (a.last_price ?? 0);
+      if (sort === 'price-desc')  return (livePrice(b) ?? b.last_price ?? 0) - (livePrice(a) ?? a.last_price ?? 0);
       if (sort === 'target-gap') {
         const ga = targetGap(a.ticker), gb = targetGap(b.ticker);   // largest shortfall first; no target last
         if (ga === null || gb === null) return (ga === null) - (gb === null) || a.ticker.localeCompare(b.ticker);
@@ -1197,7 +1213,7 @@
         card.style.borderColor  = pal.border;
       }
 
-      const price = t.last_price != null ? fmtPrice(t.last_price) : '—';
+      const price = cardPriceHtml(t);
 
       const joint = jointT(t, [...activeIndicators], indicatorLevels);
       const many = activeIndicators.size > 1;
@@ -2340,6 +2356,95 @@
   // market by a session or more. The live mark (same quote the order ticket uses) is drawn as a final,
   // clearly labelled point; when no quote is available the chart simply shows the stored closes.
   let liveMark = null;
+
+  // ── Live prices for every ticker ────────────────────────────────────────────
+  // The grid's numbers are daily closes from the last scheduled analysis. This loop fetches one batch of
+  // live prices for all tickers at the rate chosen in the top bar and updates cards in place; the
+  // signals (RSI, VWAP, trend) stay on closes. It pauses while the tab is hidden.
+  const LIVE_KEY = 'tradility-live-seconds';
+  const LIVE_CHOICES = [0, 5, 15, 30, 60, 300];
+  let liveQuotes = {}, liveSeconds = 30, liveTimer = null, liveAsOf = '', liveError = '';
+
+  function livePrice(t) {
+    const p = liveQuotes[t.ticker];
+    return Number.isFinite(p) ? p : null;
+  }
+
+  function cardPriceHtml(t) {
+    const live = livePrice(t);
+    if (live === null) return t.last_price != null ? fmtPrice(t.last_price) : '—';
+    const close = Number(t.last_price);
+    if (!(close > 0)) return fmtPrice(live);
+    const change = (live - close) / close * 100;
+    const cls = change > 0 ? 'up' : change < 0 ? 'down' : '';
+    return `${fmtPrice(live)}<span class="card-live-chg ${cls}" title="Live vs last close ${esc(fmtPrice(close))}">${change > 0 ? '+' : ''}${change.toFixed(1)}%</span>`;
+  }
+
+  function paintLiveStatus() {
+    const box = document.getElementById('live-status');
+    if (!box) return;
+    box.classList.toggle('error', Boolean(liveError));
+    if (!liveSeconds) { box.textContent = 'Live off'; return; }
+    if (liveError) { box.textContent = `Live unavailable: ${liveError}`; return; }
+    box.textContent = liveAsOf ? `Live · ${new Date(liveAsOf).toLocaleTimeString()}` : 'Live · loading…';
+  }
+
+  function applyLive() {
+    const byTicker = new Map(allTickers.map(t => [t.ticker, t]));
+    document.querySelectorAll('.ticker-card').forEach(card => {
+      const t = byTicker.get(card.dataset.ticker);
+      const price = card.querySelector('.card-price');
+      if (t && price) price.innerHTML = cardPriceHtml(t);
+    });
+    if (detailRecord && livePrice(detailRecord) !== null) {
+      liveMark = {ticker: detailRecord.ticker, price: livePrice(detailRecord), day: new Date().toISOString().slice(0, 10)};
+      paintDetailPrice();
+      drawDetailChart();
+    }
+  }
+
+  async function pollLive() {
+    try {
+      const res = await fetch('/api/tradility-quotes');
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      liveQuotes = data.quotes || {};
+      liveAsOf = data.as_of || new Date().toISOString();
+      liveError = '';
+      applyLive();
+    } catch (err) {
+      liveError = err.message;
+    }
+    paintLiveStatus();
+    scheduleLive(false);
+  }
+
+  function scheduleLive(immediate) {
+    clearTimeout(liveTimer);
+    liveTimer = null;
+    paintLiveStatus();
+    if (!liveSeconds || document.hidden) return;
+    liveTimer = setTimeout(pollLive, immediate ? 0 : liveSeconds * 1000);
+  }
+
+  function setLiveInterval(value) {
+    liveSeconds = LIVE_CHOICES.includes(Number(value)) ? Number(value) : 30;
+    try { localStorage.setItem(LIVE_KEY, String(liveSeconds)); } catch (e) {}
+    scheduleLive(true);
+  }
+
+  function startLive() {
+    try {
+      const saved = Number(localStorage.getItem(LIVE_KEY));
+      if (localStorage.getItem(LIVE_KEY) !== null && LIVE_CHOICES.includes(saved)) liveSeconds = saved;
+    } catch (e) {}
+    const select = document.getElementById('live-select');
+    if (select) select.value = String(liveSeconds);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { clearTimeout(liveTimer); liveTimer = null; } else scheduleLive(true);
+    });
+    scheduleLive(true);
+  }
   async function loadLiveMark() {
     const ticker = detailTicker;
     liveMark = null;
@@ -2924,6 +3029,7 @@
   });
 
   loadData().then(() => {
+    startLive();
     const requestedRange = new URLSearchParams(window.location.search).get('range');
     if (IS_POPOUT && RANGES.includes(requestedRange)) detailRange = requestedRange;
     const requestedTicker = new URLSearchParams(window.location.search).get('ticker');
