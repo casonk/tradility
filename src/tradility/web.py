@@ -15,7 +15,10 @@ import secrets
 import shlex
 import subprocess
 import sys
+import threading
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -58,6 +61,9 @@ def _csrf_token() -> str:
         token = secrets.token_urlsafe(32)
         session["_csrf_token"] = token
     return token
+
+
+QUOTE_CACHE_SECONDS = 4.0
 
 
 def _trader_call(
@@ -208,6 +214,50 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
             }
         )
         return jsonify(data)
+
+    quote_cache: dict[str, Any] = {"at": 0.0, "payload": None}
+    quote_lock = threading.Lock()
+
+    @app.get("/api/tradility-quotes")
+    def live_quotes():
+        """Live prices for every analysed ticker, keyed as the page names them.
+
+        One batch per call; results are shared for a few seconds so several open
+        tabs (or a fast refresh rate) cannot flood the broker's quote limit.
+        """
+        with quote_lock:
+            fresh = time.monotonic() - quote_cache["at"] < QUOTE_CACHE_SECONDS
+            if fresh and quote_cache["payload"] is not None:
+                return jsonify(quote_cache["payload"])
+            try:
+                data = _analysis(app)
+            except (LookupError, RuntimeError) as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 503
+            symbols: dict[str, str] = {}
+            for record in data.get("tickers", []):
+                if not isinstance(record, dict) or not record.get("ticker"):
+                    continue
+                name = str(record["ticker"]).upper()
+                asset = record.get("asset_class")
+                if asset == "Options":
+                    continue
+                symbols[f"{name}-USD" if asset == "Crypto" else name] = name
+            code, payload = _trader_call(
+                app, "GET", f"/quotes?{urllib.parse.urlencode({'symbols': ','.join(symbols)})}"
+            )
+            if code != 200 or not payload.get("ok"):
+                return jsonify(payload), code
+            result = {
+                "ok": True,
+                "as_of": payload.get("as_of"),
+                "quotes": {
+                    symbols[sym]: price
+                    for sym, price in (payload.get("quotes") or {}).items()
+                    if sym in symbols
+                },
+            }
+            quote_cache.update(at=time.monotonic(), payload=result)
+            return jsonify(result)
 
     @app.get("/api/tradility-analysis/<path:ticker>")
     def ticker_detail(ticker: str):

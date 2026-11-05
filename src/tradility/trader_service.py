@@ -16,6 +16,7 @@ import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib.parse import parse_qs
 
 from tradility import accounts as accounts_module
 from tradility import trading as t
@@ -146,6 +147,12 @@ class Service:
                 return HTTPStatus.OK, {"ok": True, **self.transfers()}
             if method == "GET" and path == "/accounts":
                 return HTTPStatus.OK, {"ok": True, **self.accounts()}
+            if method == "GET" and path.partition("?")[0] == "/quotes":
+                symbols = parse_qs(path.partition("?")[2]).get("symbols", [""])[0]
+                return HTTPStatus.OK, {
+                    "ok": True,
+                    **self._current().quotes([x for x in symbols.split(",") if x][:600]),
+                }
             if method == "GET" and path.startswith("/quote/"):
                 return HTTPStatus.OK, {
                     "ok": True,
