@@ -250,6 +250,23 @@ The wrapper uses an output lock so a manual refresh cannot overlap the
 scheduled run. It can be scheduled directly with cron or systemd; Clockwork is
 one optional scheduler and portal integration rather than a runtime dependency.
 
+## Live prices, indicators and orders
+
+The page's **Live** control (top bar) fetches one batch of live prices for every ticker at the chosen
+rate. The server moves RSI, VWAP, the moving averages, the trend and the technical rating with the
+live price, from the last ~320 bars the nightly analysis stores per ticker (`live_bars`; records from
+before that field existed update after the next nightly run). Fundamentals stay on the last report.
+
+Broker orders are refreshed separately by `scripts/run_orders_refresh.sh`: the last
+`TRADILITY_ORDERS_RECENT_DAYS` (default 60) of Schwab orders are merged into the export by order id
+and the Binance.US history is re-read, in parallel, so a fill appears in minutes. Example user units
+are in `docs/systemd/` (every five minutes during weekday extended hours, hourly otherwise):
+
+```bash
+cp docs/systemd/tradility-orders.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now tradility-orders.timer
+```
+
 ## Crypto Tickers
 
 Crypto from Binance uses plain symbols (`BTC`, `ETH`). When loaded from a holdings file these are automatically converted to Yahoo Finance format (`BTC-USD`, `ETH-USD`) for fetching, then restored to the original symbol in the output.

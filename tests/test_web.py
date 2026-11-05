@@ -30,6 +30,13 @@ def web_client(tmp_path):
                         "vwap_20": 195,
                         "long_term_trend": "bullish",
                         "price_history": [{"date": "2026-11-03", "close": 200}],
+                        "live_bars": {
+                            "date": "2026-11-03",
+                            "close": [150 + i * 0.2 for i in range(320)],
+                            "high": [151 + i * 0.2 for i in range(60)],
+                            "low": [149 + i * 0.2 for i in range(60)],
+                            "volume": [1000.0] * 60,
+                        },
                         "company_profile": {"available": True, "description": "Technology."},
                     }
                 ],
@@ -201,3 +208,29 @@ def test_live_quotes_cover_every_ticker_and_are_shared_between_callers(web_clien
 
     page = client.get("/").get_data(as_text=True)
     assert 'id="live-select"' in page and "/api/tradility-quotes" in page
+
+
+def test_live_quotes_carry_indicators_moved_by_the_live_price_and_bars_stay_private(
+    web_client, monkeypatch
+):
+    client, _ = web_client
+    monkeypatch.setattr(
+        "tradility.web._trader_call",
+        lambda *a, **k: (
+            200,
+            {
+                "ok": True,
+                "as_of": "2026-11-05T14:00:00+00:00",
+                "quotes": {"AAPL": 120.0},
+                "sessions": {"AAPL": {"high": 125.0, "low": 118.0, "volume": 50000.0}},
+            },
+        ),
+    )
+    live = client.get("/api/tradility-quotes").get_json()["indicators"]["AAPL"]
+    assert live["last_price"] == 120.0
+    assert live["rsi_14"] < 40  # a drop from the stored trend pulls RSI down
+    assert live["long_term_trend"] in {"bearish", "mixed", "bullish"} and "vwap_20" in live
+
+    listing = client.get("/api/tradility-analysis").get_json()["tickers"][0]
+    detail = client.get("/api/tradility-analysis/aapl").get_json()["ticker"]
+    assert "live_bars" not in listing and "live_bars" not in detail
