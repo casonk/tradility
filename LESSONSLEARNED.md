@@ -39,3 +39,14 @@ Unlike `CHATHISTORY.md`, this file should keep only reusable lessons that should
   separate from daily price provenance. Preserve stale cached profiles through
   transient provider failures, keep list payloads compact, and never present a
   generated business summary as an official company mission or vision.
+
+- **Never run the Schwab token command per request.** Schwab rotates the refresh token on every
+  exchange and revokes it when an old one is replayed, so a poll (the Live quotes) or a frequent
+  timer that exchanges each time, with overlapping processes, kills the credential until someone
+  re-authorizes in a browser. Go through `resolve_access_token` (one exchange per 20 minutes per
+  process, a lock across processes, a one-minute failure backoff), keep the timers sparse, and never
+  write the access token to disk.
+- **A JSON endpoint must be checked with a strict parser.** Python and Chromium accept bare `NaN`;
+  Safari's `Response.json()` rejects it ("The string did not match the expected pattern") and every
+  call that follows, such as the refresh token fetch, fails. Fill gaps before exporting, read NaN as
+  null on the way out, and test responses with `parse_constant` raising.
