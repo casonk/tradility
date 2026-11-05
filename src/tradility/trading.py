@@ -947,10 +947,14 @@ class Trader:
         }
         prices: dict[str, float] = {}
         for name, group in groups.items():
-            if not group or name not in self.policy.brokers or name not in self.brokers:
+            if not group:
                 continue
             try:
-                prices.update(self.brokers[name]().last_prices(group))
+                if name in self.policy.brokers and name in self.brokers:
+                    prices.update(self.brokers[name]().last_prices(group))
+                elif name == "binance":
+                    # Coin prices are public: show them even when Binance trading is not enabled.
+                    prices.update(BinanceTrader("", "", http_send).last_prices(group))
             except (TradingError, OSError, ValueError):
                 continue  # one broker failing must not hide the other's prices
         return {

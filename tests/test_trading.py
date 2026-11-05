@@ -918,3 +918,18 @@ def test_quotes_fetch_many_tickers_in_few_requests_and_skip_unpriced_ones(tmp_pa
     assert result["requested"] == 5
     assert sum("marketdata/v1/quotes" in u for u in urls) == 1  # all stocks in one request
     assert sum(u.endswith("/api/v3/ticker/price") for u in urls) == 1  # all coins in one request
+
+
+def test_coin_prices_are_shown_even_when_binance_trading_is_off(tmp_path, monkeypatch):
+    def public_send(method, url, headers, body):
+        assert headers == {} and "SIGN" not in url  # public data: no key, no signature
+        return 200, {}, [{"symbol": "ETHUSD", "price": "2500"}]
+
+    monkeypatch.setattr(t, "http_send", public_send)
+    schwab_only = dataclasses.replace(POLICY, brokers=("schwab",), tickers=frozenset({"*"}))
+    trader = t.Trader(
+        schwab_only,
+        {"schwab": lambda: t.SchwabTrader("tok", lambda *a: (200, {}, {}))},
+        t.Audit(tmp_path / "a.jsonl"),
+    )
+    assert trader.quotes(["ETH-USD"])["quotes"] == {"ETH-USD": 2500.0}
