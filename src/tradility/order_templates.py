@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 SIDES = ("buy", "sell")
+TEMPLATE_SIDES = (*SIDES, "both")  # "both": buys below and sells above the price, one rung each way
 TIFS = ("day", "gtc")
 SESSIONS = ("normal", "extended")
 MAX_TEMPLATES = 50
@@ -67,8 +68,8 @@ def clean(raw: Any) -> dict[str, Any]:
     if not name or len(name) > MAX_NAME:
         raise ValueError(f"name is required and at most {MAX_NAME} characters")
     side = raw.get("side")
-    if side not in SIDES:
-        raise ValueError("side must be buy or sell")
+    if side not in TEMPLATE_SIDES:
+        raise ValueError("side must be buy, sell or both")
     tif = str(raw.get("tif", "gtc")).lower()
     session = str(raw.get("session", "normal")).lower()
     if tif not in TIFS:
@@ -85,19 +86,35 @@ def clean(raw: Any) -> dict[str, Any]:
         if not isinstance(rung, dict):
             raise ValueError(f"rung {i} is an object")
         try:
+            rung_side = rung.get("side")
+            if side == "both":
+                if rung_side not in SIDES:
+                    raise ValueError("a rung in a two-sided template needs a side, buy or sell")
+            elif rung_side not in (None, side):
+                raise ValueError(f"every rung of a {side} template is a {side}")
+            else:
+                rung_side = side
             quantity = _finite(rung.get("quantity"), "quantity")
             offset = _finite(rung.get("offset_pct"), "offset_pct")
             if not 0 < quantity <= MAX_QUANTITY:
                 raise ValueError("quantity must be positive")
             if abs(offset) > MAX_OFFSET_PCT:
                 raise ValueError(f"offset_pct must be within {MAX_OFFSET_PCT}%")
-            if (side == "buy" and offset > 0) or (side == "sell" and offset < 0):
+            if (rung_side == "buy" and offset > 0) or (rung_side == "sell" and offset < 0):
                 raise ValueError(
                     "a buy rung sits at or below the price and a sell rung at or above it"
                 )
         except ValueError as exc:
             raise ValueError(f"rung {i}: {exc}") from exc
-        cleaned.append({"quantity": quantity, "offset_pct": offset})
+        cleaned.append(
+            {
+                "quantity": quantity,
+                "offset_pct": offset,
+                **({"side": rung_side} if side == "both" else {}),
+            }
+        )
+    if side == "both" and {r["side"] for r in cleaned} != set(SIDES):
+        raise ValueError("a two-sided template needs at least one buy rung and one sell rung")
     return {"name": name, "side": side, "tif": tif, "session": session, "rungs": cleaned}
 
 

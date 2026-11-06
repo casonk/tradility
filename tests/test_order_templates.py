@@ -39,7 +39,7 @@ def test_a_template_is_validated_and_cleaned():
     [
         ({"name": ""}, "name is required"),
         ({"name": "x" * 41}, "at most 40 characters"),
-        ({"side": "hold"}, "side must be buy or sell"),
+        ({"side": "hold"}, "side must be buy, sell or both"),
         ({"tif": "forever"}, "duration must be day or gtc"),
         ({"session": "night"}, "hours must be normal or extended"),
         ({"rungs": []}, "at least one rung"),
@@ -157,5 +157,99 @@ def test_the_tab_can_import_the_order_forms_one_click_templates(web_client):  # 
         "const tplPolicyMissing",
         'id="tpl-import"',
         "tradeStatus.templates",
+    ):
+        assert hook in page, hook
+
+
+def straddle(**kw):
+    rungs = [
+        {"side": "buy", "quantity": 1, "offset_pct": -1},
+        {"side": "buy", "quantity": 2, "offset_pct": -2},
+        {"side": "sell", "quantity": 1, "offset_pct": 1},
+    ]
+    return {**ladder(side="both"), "rungs": rungs, **kw}
+
+
+def test_a_two_sided_template_keeps_each_rungs_side():
+    cleaned = ot.clean(straddle())
+    assert cleaned["side"] == "both"
+    assert [(r["side"], r["offset_pct"]) for r in cleaned["rungs"]] == [
+        ("buy", -1.0),
+        ("buy", -2.0),
+        ("sell", 1.0),
+    ]
+    # a single-side template stores no per-rung side, and accepts one that agrees with it
+    one = ot.clean(ladder(rungs=[{"side": "buy", "quantity": 1, "offset_pct": -1}]))
+    assert "side" not in one["rungs"][0]
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (
+            {
+                "rungs": [
+                    {"quantity": 1, "offset_pct": -1},
+                    {"side": "sell", "quantity": 1, "offset_pct": 1},
+                ]
+            },
+            "rung 1: a rung in a two-sided template needs a side",
+        ),
+        (
+            {
+                "rungs": [
+                    {"side": "buy", "quantity": 1, "offset_pct": 1},
+                    {"side": "sell", "quantity": 1, "offset_pct": 1},
+                ]
+            },
+            "rung 1: a buy rung sits at or below",
+        ),
+        (
+            {
+                "rungs": [
+                    {"side": "buy", "quantity": 1, "offset_pct": -1},
+                    {"side": "sell", "quantity": 1, "offset_pct": -1},
+                ]
+            },
+            "rung 2: a buy rung sits at or below",
+        ),
+        (
+            {"rungs": [{"side": "buy", "quantity": 1, "offset_pct": -1}]},
+            "at least one buy rung and one sell rung",
+        ),
+        (
+            {"rungs": [{"side": "sell", "quantity": 1, "offset_pct": 1}]},
+            "at least one buy rung and one sell rung",
+        ),
+    ],
+)
+def test_bad_two_sided_templates_are_refused_with_the_reason(change, message):
+    with pytest.raises(ValueError, match=message):
+        ot.clean(straddle(**change))
+
+
+def test_a_single_side_template_refuses_a_rung_of_the_other_side():
+    with pytest.raises(ValueError, match="every rung of a buy template is a buy"):
+        ot.clean(ladder(rungs=[{"side": "sell", "quantity": 1, "offset_pct": 1}]))
+
+
+def test_two_sided_templates_save_and_load_through_the_routes(web_client):  # noqa: F811
+    client, _ = web_client
+    headers = {"X-CSRF-Token": csrf(client)}
+    created = client.post("/api/tradility-templates", json=straddle(), headers=headers)
+    assert created.status_code == 201 and created.get_json()["template"]["side"] == "both"
+    stored = client.get("/api/tradility-templates").get_json()["templates"][0]
+    assert [r["side"] for r in stored["rungs"]] == ["buy", "buy", "sell"]
+
+
+def test_the_tab_offers_two_sided_ladders_with_a_side_per_rung(web_client):  # noqa: F811
+    client, _ = web_client
+    page = client.get("/").get_data(as_text=True)
+    for hook in (
+        "buy + sell (straddle)",
+        "const rungSide",
+        "data-rside",
+        "notional_by_side",
+        "tpl-side-sell",
     ):
         assert hook in page, hook

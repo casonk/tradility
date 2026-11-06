@@ -952,6 +952,15 @@ def ladder(**kw):
     }
 
 
+def holding(trader, quantity, ticker="AAPL", account="1234"):
+    """Make the trader see a live holding, as the service does from the broker's account data."""
+    trader.accounts_loader = lambda: {
+        "accounts": [
+            {"id": account, "broker": "schwab", "holdings": {ticker: {"quantity": quantity}}}
+        ]
+    }
+
+
 def audit_events(audit):
     return [json.loads(line)["event"] for line in audit.path.read_text().splitlines()]
 
@@ -1015,6 +1024,7 @@ def test_buy_rungs_sit_below_the_price_and_sell_rungs_above(rig):
     with pytest.raises(t.TradingError, match=f"rung 1: {wrong_side}"):
         trader.preview_batch(ladder(side="sell", rungs=[{"quantity": 1, "offset_pct": -1}]))
     rungs = [{"quantity": 1, "offset_pct": 1}, {"quantity": 1, "offset_pct": 2}]
+    holding(trader, 5)
     pv = trader.preview_batch(ladder(side="sell", rungs=rungs))
     assert [o["price"] for o in pv["orders"]] == [101.0, 102.0] and pv["phrase"] == "SELL 2 AAPL"
 
@@ -1106,3 +1116,128 @@ def test_a_ladder_always_needs_its_typed_phrase_even_when_single_orders_need_onl
     assert not placements(send)
     pv = trader.preview_batch(ladder())
     assert trader.confirm_batch(pv["preview_id"], "BUY 3 AAPL")["placed_count"] == 3
+
+
+# -- two-sided ladders (a straddle of orders around the price) ------------------------------------
+
+
+def straddle(**kw):
+    return ladder(
+        rungs=[
+            {"side": "buy", "quantity": 1, "offset_pct": -1},
+            {"side": "buy", "quantity": 2, "offset_pct": -2},
+            {"side": "sell", "quantity": 1, "offset_pct": 1},
+            {"side": "sell", "quantity": 2, "offset_pct": 2},
+        ],
+        **kw,
+    )
+
+
+def test_a_two_sided_ladder_previews_buys_below_and_sells_above_with_one_phrase(rig):
+    trader, send, *_ = rig
+    holding(trader, 5)
+    pv = trader.preview_batch(straddle())
+    assert pv["side"] == "both" and pv["counts"] == {"buy": 2, "sell": 2}
+    assert pv["phrase"] == "BUY 2 SELL 2 AAPL"
+    assert [(o["side"], o["price"]) for o in pv["orders"]] == [
+        ("buy", 99.0),
+        ("buy", 98.0),
+        ("sell", 101.0),
+        ("sell", 102.0),
+    ]
+    assert pv["notional_by_side"] == {"buy": 99 + 196, "sell": 101 + 204}
+    assert pv["total_notional"] == 99 + 196 + 101 + 204  # both sides count toward the limits
+    assert not placements(send)
+
+
+def test_a_two_sided_ladder_places_every_rung_on_both_sides_in_order(rig):
+    trader, send, audit, _ = rig
+    holding(trader, 5)
+    pv = trader.preview_batch(straddle())
+    done = trader.confirm_batch(pv["preview_id"], "BUY 2 SELL 2 AAPL")
+    assert done["placed"] is True and done["placed_count"] == 4
+    sent = [json.loads(c[2]) for c in placements(send)]
+    assert [x["orderLegCollection"][0]["instruction"] for x in sent] == [
+        "BUY",
+        "BUY",
+        "SELL",
+        "SELL",
+    ]
+    assert [x["price"] for x in sent] == ["99.00", "98.00", "101.00", "102.00"]
+    assert audit_events(audit).count("placed") == 4
+    with pytest.raises(t.TradingError, match="expired or was already used"):
+        trader.confirm_batch(pv["preview_id"], "BUY 2 SELL 2 AAPL")
+
+
+def test_the_phrase_for_a_two_sided_ladder_names_both_sides(rig):
+    trader, send, *_ = rig
+    holding(trader, 5)
+    pv = trader.preview_batch(straddle())
+    with pytest.raises(t.TradingError, match='type exactly "BUY 2 SELL 2 AAPL"'):
+        trader.confirm_batch(pv["preview_id"], "BUY 4 AAPL")
+    assert not placements(send)
+
+
+def test_each_rung_follows_its_own_sides_direction_rule_and_needs_a_side(rig):
+    trader, *_ = rig
+    holding(trader, 5)
+    wrong = "a buy rung sits at or below the price and a sell rung at or above it"
+    with pytest.raises(t.TradingError, match=f"rung 3: {wrong}"):
+        trader.preview_batch(
+            ladder(
+                rungs=[
+                    {"side": "buy", "quantity": 1, "offset_pct": -1},
+                    {"side": "sell", "quantity": 1, "offset_pct": 1},
+                    {"side": "sell", "quantity": 1, "offset_pct": -1},
+                ]
+            )
+        )
+    no_side = ladder(rungs=[{"quantity": 1, "offset_pct": -1}])
+    del no_side["side"]
+    with pytest.raises(t.TradingError, match="rung 1: a rung needs a side"):
+        trader.preview_batch(no_side)
+
+
+def test_sell_rungs_are_refused_beyond_what_the_account_holds_and_nothing_is_sent(rig):
+    trader, send, *_ = rig
+    holding(trader, 2)  # the sell rungs add up to 3
+    with pytest.raises(t.TradingError, match="sell rungs add up to 3 AAPL but the account holds 2"):
+        trader.preview_batch(straddle())
+    holding(trader, 3)
+    pv = trader.preview_batch(straddle())  # exactly covered is fine
+    holding(trader, 1)  # then the holding shrinks before the confirmation
+    with pytest.raises(t.TradingError, match="account holds 1; nothing was sent"):
+        trader.confirm_batch(pv["preview_id"], pv["phrase"])
+    assert not placements(send)
+
+
+def test_sells_are_refused_when_the_holding_cannot_be_read_but_buys_are_not(rig):
+    trader, *_ = rig
+    with pytest.raises(t.TradingError, match="cannot confirm how much AAPL the account holds"):
+        trader.preview_batch(straddle())  # no holdings source at all
+    trader.accounts_loader = lambda: (_ for _ in ()).throw(OSError("broker down"))
+    with pytest.raises(t.TradingError, match="cannot confirm how much AAPL"):
+        trader.preview_batch(straddle())
+    assert trader.preview_batch(ladder())["phrase"] == "BUY 3 AAPL"  # a buys-only ladder needs none
+    trader.accounts_loader = lambda: {
+        "accounts": [{"id": "9999", "broker": "schwab", "holdings": {}}]
+    }
+    with pytest.raises(
+        t.TradingError, match="cannot confirm how much AAPL"
+    ):  # another account only
+        trader.preview_batch(straddle())
+
+
+def test_a_two_sided_ladder_still_fits_the_per_order_cap_and_the_daily_total(rig):
+    trader, send, *_ = rig
+    holding(trader, 100)
+    each_side = [{"side": "buy", "quantity": 4, "offset_pct": -1}] * 2  # $792 buys
+    sells = [
+        {"side": "sell", "quantity": 4, "offset_pct": 1}
+    ] * 2  # $808 sells: $1,600 > $1,500 a day
+    with pytest.raises(t.TradingError, match="passes the .*daily limit"):
+        trader.preview_batch(ladder(rungs=each_side + sells))
+    huge_sell = [{"side": "sell", "quantity": 20, "offset_pct": 1}]  # $2,020 on its own
+    with pytest.raises(t.TradingError, match="rung 2: .*per-order limit"):
+        trader.preview_batch(ladder(rungs=each_side[:1] + huge_sell))
+    assert not placements(send)
