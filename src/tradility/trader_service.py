@@ -164,6 +164,8 @@ class Service:
                 "/cancel",
                 "/withdraw/preview",
                 "/withdraw/confirm",
+                "/batch/preview",
+                "/batch/confirm",
                 "/fidelity/ticket",
                 "/fidelity/stage",
                 "/fidelity/submit",
@@ -185,6 +187,13 @@ class Service:
                 }
             if path == "/fidelity/ticket":
                 return HTTPStatus.OK, {"ok": True, **trader.fidelity_ticket(data)}
+            if path == "/batch/preview":
+                return HTTPStatus.OK, {"ok": True, **trader.preview_batch(data)}
+            if path == "/batch/confirm":
+                return HTTPStatus.OK, {
+                    "ok": True,
+                    **trader.confirm_batch(data.get("preview_id", ""), data.get("phrase", "")),
+                }
             if path == "/withdraw/preview":
                 return HTTPStatus.OK, {"ok": True, **trader.withdraw_preview(data)}
             if path == "/withdraw/confirm":

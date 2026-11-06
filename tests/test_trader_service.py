@@ -127,3 +127,32 @@ def test_the_quote_endpoint_returns_the_mark_and_default_prices_and_status_lists
         ]
         == 403
     )
+
+
+def test_a_ladder_is_previewed_and_confirmed_over_the_service(svc, monkeypatch):
+    monkeypatch.setenv("TRADILITY_SCHWAB_ACCESS_TOKEN", "tok")
+    rungs = [{"quantity": 1, "offset_pct": -1}, {"quantity": 2, "offset_pct": -2}]
+    code, pv = post(
+        svc, "/batch/preview", {"ticker": "AAPL", "side": "buy", "account": "1234", "rungs": rungs}
+    )
+    assert code == 200 and pv["ok"] and pv["phrase"] == "BUY 2 AAPL" and pv["count"] == 2
+    placed = [c for c in svc.fake.calls if c[0] == "POST" and c[1].endswith("/orders")]
+    assert not placed  # a preview sends nothing
+    code, done = post(
+        svc, "/batch/confirm", {"preview_id": pv["preview_id"], "phrase": "BUY 2 AAPL"}
+    )
+    assert code == 200 and done["placed"] is True and done["placed_count"] == 2
+    placed = [c for c in svc.fake.calls if c[0] == "POST" and c[1].endswith("/orders")]
+    assert len(placed) == 2
+
+
+def test_a_refused_ladder_says_why_and_the_ladder_routes_are_header_gated(svc, monkeypatch):
+    monkeypatch.setenv("TRADILITY_SCHWAB_ACCESS_TOKEN", "tok")
+    code, body = post(
+        svc,
+        "/batch/preview",
+        {"ticker": "AAPL", "side": "buy", "account": "1234", "rungs": []},
+    )
+    assert code == 422 and body["ok"] is False and "at least one rung" in body["error"]
+    code, body = post(svc, "/batch/preview", {}, headers={"Host": "127.0.0.1:8768"})
+    assert code == 403 and body["error"] == "not allowed"

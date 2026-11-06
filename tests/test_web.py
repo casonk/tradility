@@ -268,3 +268,37 @@ def test_the_standalone_page_shows_its_name_once(web_client):
     assert "standalone-nav" not in page
     assert 'class="header-title" href="/"' in page and "Standalone web application" in page
     assert 'id="meta-generated"' in page  # the updated time still has its place
+
+
+def test_ladder_routes_forward_to_the_trader_and_only_those_steps(web_client, monkeypatch):
+    client, _ = web_client
+    seen = []
+
+    def fake_trader(app, method, path, body=None):
+        seen.append((method, path, body))
+        return 200, {"ok": True, "phrase": "BUY 1 AAPL"}
+
+    monkeypatch.setattr("tradility.web._trader_call", fake_trader)
+    token = csrf(client)
+    headers = {"X-CSRF-Token": token}
+    body = {"ticker": "AAPL", "side": "buy", "rungs": [{"quantity": 1, "offset_pct": -1}]}
+    ok = client.post("/api/tradility-trade/batch/preview", json=body, headers=headers)
+    assert ok.status_code == 200 and seen == [("POST", "/batch/preview", body)]
+    confirm = {"preview_id": "x", "phrase": "BUY 1 AAPL"}
+    assert (
+        client.post("/api/tradility-trade/batch/confirm", json=confirm, headers=headers).status_code
+        == 200
+    )
+    assert seen[-1][1] == "/batch/confirm"
+    assert (
+        client.post("/api/tradility-trade/batch/place", json=body, headers=headers).status_code
+        == 404
+    )
+    assert (
+        client.post("/api/tradility-trade/batch/preview", data="x", headers=headers).status_code
+        == 400
+    )
+    no_token = client.post("/api/tradility-trade/batch/preview", json=body)
+    assert (
+        no_token.status_code in {400, 403} and len(seen) == 2
+    )  # nothing forwarded without the token

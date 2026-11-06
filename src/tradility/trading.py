@@ -107,6 +107,9 @@ class Policy:
     # How an order is confirmed after its preview: "phrase" (type BUY AAPL) or "button" (a click).
     # Withdrawals and cancels always need their typed phrase.
     confirmation: str = "phrase"
+    # The most orders one ladder (batch) may send; each still obeys the per-order cap, the price band
+    # and the daily total.
+    max_batch_orders: int = 10
     # One-click order shapes: (name, side, offset_pct from the mark, tif or "", session or "")
     templates: tuple[tuple[str, str, float, str, str], ...] | None = None  # None: the built-in set
     # Withdrawals are off unless this section turns them on, and only go to listed addresses.
@@ -201,6 +204,7 @@ def load_policy(path: Path | None = None) -> Policy:
             default_session=str((raw.get("defaults") or {}).get("session", "normal")).lower(),
             default_tif=str((raw.get("defaults") or {}).get("time_in_force", "gtc")).lower(),
             confirmation=str((raw.get("defaults") or {}).get("confirmation", "phrase")).lower(),
+            max_batch_orders=int(raw.get("max_batch_orders", 10)),
             templates=_templates(raw.get("templates")),
             withdrawals_enabled=(raw.get("withdrawals") or {}).get("enabled") is True,
             withdraw_per_usd=float((raw.get("withdrawals") or {}).get("per_withdrawal_usd", 0)),
@@ -219,6 +223,8 @@ def load_policy(path: Path | None = None) -> Policy:
         raise TradingError("trading policy has a bad value") from exc
     if policy.fidelity_automation not in ("off", "stage", "submit"):
         raise TradingError("trading policy [fidelity] automation is off, stage or submit")
+    if not 1 <= policy.max_batch_orders <= 50:
+        raise TradingError("trading policy max_batch_orders is between 1 and 50")
     if policy.confirmation not in ("phrase", "button"):
         raise TradingError("trading policy defaults: confirmation is phrase or button")
     if policy.default_session not in SESSIONS or policy.default_tif not in TIFS:
@@ -309,6 +315,19 @@ def parse_order(raw: Any) -> Order:
     return Order(
         ticker, side, kind, quantity, price, str(raw.get("account", "")).strip(), session, tif
     )
+
+
+@dataclass(frozen=True)
+class Batch:
+    """A ladder: several limit orders on one ticker and side, previewed and confirmed together."""
+
+    ticker: str
+    side: str
+    orders: tuple[Order, ...]
+
+    @property
+    def phrase(self) -> str:
+        return f"{self.side.upper()} {len(self.orders)} {self.ticker}"
 
 
 # -- audit --------------------------------------------------------------------------------------
@@ -745,7 +764,7 @@ class Trader:
         now: Callable[[], float] = time.time,
     ) -> None:
         self.policy, self.brokers, self.audit, self.now = policy, brokers, audit or Audit(), now
-        self._previews: dict[str, tuple[Order, float, float]] = {}
+        self._previews: dict[str, tuple[Any, float, float]] = {}
         self._lock = threading.Lock()
 
     def _broker(self, order: Order) -> Any:
@@ -1102,6 +1121,16 @@ class Trader:
             raise TradingError(f'type exactly "{order.phrase}" to confirm')
         broker = self._broker(order)
         last = broker.last_price(order.ticker)
+        placed, _notional = self._send(order, broker, last)
+        return {
+            "placed": True,
+            "broker": order.broker,
+            "broker_order_id": placed.broker_order_id,
+            "order": _describe(order),
+        }
+
+    def _send(self, order: Order, broker: Any, last: float) -> tuple[Any, float]:
+        """Check one order against the limits once more, send it and write its audit trail."""
         notional = self._limits(order, last)
         client_id = "tradility-" + secrets.token_hex(8)
         self.audit.write(
@@ -1137,11 +1166,197 @@ class Trader:
             broker_order_id=placed.broker_order_id,
             client_id=client_id,
         )
+        return placed, notional
+
+    # -- ladders: one preview and one confirmation for several limit orders ---------------------------
+
+    def preview_batch(self, raw: Any) -> dict[str, Any]:
+        """Expand a ladder from the live price, check every rung and the whole, place nothing.
+
+        ``raw`` is ``{ticker, side, account, session, tif, rungs: [{quantity, offset_pct}]}``. A rung's
+        limit price is the live price moved by ``offset_pct`` (a buy rung at or below it, a sell rung at
+        or above it) and rounded to the broker's tick. Each rung obeys the per-order cap and the price
+        band, and together they must fit in what is left of the daily total."""
+        if not isinstance(raw, dict):
+            raise TradingError("a ladder is an object")
+        rungs = raw.get("rungs")
+        if not isinstance(rungs, list) or not rungs:
+            raise TradingError("a ladder needs at least one rung")
+        if len(rungs) > self.policy.max_batch_orders:
+            raise TradingError(
+                f"a ladder can have at most {self.policy.max_batch_orders} rungs "
+                "(the policy's max_batch_orders)"
+            )
+        base = {
+            "session": self.policy.default_session,
+            "tif": self.policy.default_tif,
+            **{k: raw[k] for k in ("ticker", "side", "account", "session", "tif") if k in raw},
+            "kind": "limit",
+        }
+        probe = parse_order({**base, "quantity": 1, "price": 1})
+        broker = self._broker(probe)
+        last = broker.last_price(probe.ticker)
+        places = 2 if last >= 1 else 6
+        orders: list[Order] = []
+        offsets: list[float] = []
+        for i, rung in enumerate(rungs, 1):
+            try:
+                if not isinstance(rung, dict):
+                    raise TradingError("a rung is an object")
+                try:
+                    offset = float(rung.get("offset_pct"))
+                except (TypeError, ValueError) as exc:
+                    raise TradingError("offset_pct must be a number") from exc
+                if not math.isfinite(offset) or abs(offset) > 50:
+                    raise TradingError("offset_pct must be within 50%")
+                if (probe.side == "buy" and offset > 0) or (probe.side == "sell" and offset < 0):
+                    raise TradingError(
+                        "a buy rung sits at or below the price and a sell rung at or above it"
+                    )
+                price = round(last * (1 + offset / 100), places)
+                if hasattr(broker, "round_price"):
+                    price = broker.round_price(probe.ticker, price)
+                order = parse_order({**base, "quantity": rung.get("quantity"), "price": price})
+                if hasattr(broker, "check_order"):
+                    broker.check_order(order)
+                self._limits(order, last)
+            except TradingError as exc:
+                raise TradingError(f"rung {i}: {exc}") from exc
+            orders.append(order)
+            offsets.append(offset)
+        notionals = [o.quantity * o.price for o in orders]
+        total, spent = sum(notionals), self.audit.spent_today()
+        daily = self.policy.daily_usd
+        if daily <= 0 or spent + total > daily:
+            raise TradingError(
+                f"the ladder costs about ${total:,.2f}; with ${spent:,.2f} already sent today that "
+                f"passes the ${daily:,.2f} daily limit"
+            )
+        checked = []
+        for i, order in enumerate(orders, 1):
+            try:
+                checked.append(broker.preview(order))
+            except TradingError as exc:
+                raise TradingError(f"rung {i}: {exc}") from exc
+        warnings = []
+        prices = [o.price for o in orders]
+        if len(set(prices)) < len(prices):
+            warnings.append("two rungs round to the same price")
+        batch = Batch(probe.ticker, probe.side, tuple(orders))
+        token = secrets.token_urlsafe(18)
+        with self._lock:
+            now = self.now()
+            self._previews = {k: v for k, v in self._previews.items() if v[1] > now}
+            if len(self._previews) >= MAX_PREVIEWS:
+                raise TradingError("too many pending previews; wait a moment")
+            self._previews[token] = (batch, now + PREVIEW_TTL_SECONDS, total)
+        self.audit.write(
+            "preview_batch",
+            orders=[_describe(o) for o in orders],
+            notional=total,
+            broker=probe.broker,
+        )
         return {
-            "placed": True,
-            "broker": order.broker,
-            "broker_order_id": placed.broker_order_id,
-            "order": _describe(order),
+            "batch": True,
+            "preview_id": token,
+            "expires_in": PREVIEW_TTL_SECONDS,
+            "confirmation": self.policy.confirmation,
+            "phrase": batch.phrase,
+            "broker": probe.broker,
+            "ticker": batch.ticker,
+            "side": batch.side,
+            "last_price": last,
+            "count": len(orders),
+            "total_notional": total,
+            "orders": [
+                {
+                    **_describe(order),
+                    "offset_pct": offset,
+                    "notional": notional,
+                    "warnings": result["warnings"],
+                }
+                for order, offset, notional, result in zip(
+                    orders, offsets, notionals, checked, strict=True
+                )
+            ],
+            "limits": {
+                "per_order_usd": self.policy.per_order_usd,
+                "daily_usd": daily,
+                "spent_today": spent,
+                "remaining_today": daily - spent - total,
+            },
+            "warnings": warnings,
+        }
+
+    def confirm_batch(self, token: str, phrase: str) -> dict[str, Any]:
+        """Place a previewed ladder, rung by rung, stopping at the first one that fails.
+
+        Everything is re-checked against the current price before the first order is sent, so a
+        market that has moved away aborts the whole ladder with nothing placed. After that a rung the
+        broker refuses (or whose outcome is unknown) stops the ladder: earlier rungs stay open and the
+        rest are reported as skipped."""
+        with self._lock:
+            entry = self._previews.pop(str(token), None)  # single use, whatever happens next
+        if entry is None or entry[1] <= self.now():
+            raise TradingError(
+                "that preview has expired or was already used; preview the ladder again"
+            )
+        batch = entry[0]
+        if not isinstance(batch, Batch):
+            raise TradingError("that preview is not a ladder")
+        if self.policy.confirmation == "phrase" and str(phrase).strip() != batch.phrase:
+            self.audit.write("rejected", reason="phrase", batch=batch.phrase)
+            raise TradingError(f'type exactly "{batch.phrase}" to confirm')
+        broker = self._broker(batch.orders[0])
+        last = broker.last_price(batch.ticker)
+        notionals = []
+        for i, order in enumerate(batch.orders, 1):
+            try:
+                notionals.append(self._limits(order, last))
+            except TradingError as exc:
+                raise TradingError(f"rung {i}: {exc}; nothing was sent") from exc
+        spent, total = self.audit.spent_today(), sum(notionals)
+        if self.policy.daily_usd <= 0 or spent + total > self.policy.daily_usd:
+            raise TradingError(
+                f"the ladder (${total:,.2f}) no longer fits in the daily limit; nothing was sent"
+            )
+        results: list[dict[str, Any]] = []
+        failed = False
+        for i, order in enumerate(batch.orders, 1):
+            entry_out: dict[str, Any] = {"index": i, "order": _describe(order)}
+            if failed:
+                results.append({**entry_out, "status": "skipped"})
+                continue
+            try:
+                placed, notional = self._send(order, broker, last)
+            except TradingError as exc:
+                failed = True
+                results.append({**entry_out, "status": "failed", "error": str(exc)})
+                continue
+            results.append(
+                {
+                    **entry_out,
+                    "status": "placed",
+                    "broker_order_id": placed.broker_order_id,
+                    "notional": notional,
+                }
+            )
+        placed_count = sum(1 for r in results if r["status"] == "placed")
+        self.audit.write(
+            "batch_done",
+            batch=batch.phrase,
+            placed=placed_count,
+            count=len(results),
+            stopped=failed,
+        )
+        return {
+            "placed": not failed,
+            "stopped": failed,
+            "placed_count": placed_count,
+            "count": len(results),
+            "broker": batch.orders[0].broker,
+            "ticker": batch.ticker,
+            "results": results,
         }
 
     # -- Fidelity: no order API exists, so we prepare a ticket you submit at Fidelity yourself --------

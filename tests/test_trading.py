@@ -933,3 +933,162 @@ def test_coin_prices_are_shown_even_when_binance_trading_is_off(tmp_path, monkey
         t.Audit(tmp_path / "a.jsonl"),
     )
     assert trader.quotes(["ETH-USD"])["quotes"] == {"ETH-USD": 2500.0}
+
+
+# -- ladders ---------------------------------------------------------------------------------------
+
+
+def ladder(**kw):
+    return {
+        "ticker": "AAPL",
+        "side": "buy",
+        "account": "1234",
+        "rungs": [
+            {"quantity": 1, "offset_pct": -1},
+            {"quantity": 2, "offset_pct": -2},
+            {"quantity": 3, "offset_pct": -3},
+        ],
+        **kw,
+    }
+
+
+def audit_events(audit):
+    return [json.loads(line)["event"] for line in audit.path.read_text().splitlines()]
+
+
+def test_a_ladder_is_expanded_from_the_live_price_and_one_preview_places_nothing(rig):
+    trader, send, audit, _ = rig
+    pv = trader.preview_batch(ladder())  # the live price is 100.00
+    assert pv["phrase"] == "BUY 3 AAPL" and pv["count"] == 3 and pv["broker"] == "schwab"
+    assert [(o["quantity"], o["price"], o["offset_pct"]) for o in pv["orders"]] == [
+        (1, 99.0, -1.0),
+        (2, 98.0, -2.0),
+        (3, 97.0, -3.0),
+    ]
+    assert pv["total_notional"] == 99 + 196 + 291
+    assert pv["limits"]["remaining_today"] == 1500 - 586
+    assert not placements(send) and audit_events(audit) == ["preview_batch"]
+
+
+def test_the_typed_phrase_places_every_rung_in_order(rig):
+    trader, send, audit, _ = rig
+    pv = trader.preview_batch(ladder())
+    done = trader.confirm_batch(pv["preview_id"], "BUY 3 AAPL")
+    assert done["placed"] is True and done["placed_count"] == 3 and done["stopped"] is False
+    assert [r["status"] for r in done["results"]] == ["placed"] * 3
+    prices = [json.loads(c[2])["price"] for c in placements(send)]
+    assert prices == ["99.00", "98.00", "97.00"]
+    assert audit_events(audit) == (["preview_batch"] + ["sending", "placed"] * 3 + ["batch_done"])
+
+
+def test_a_wrong_phrase_or_a_second_use_places_nothing(rig):
+    trader, send, *_ = rig
+    pv = trader.preview_batch(ladder())
+    with pytest.raises(t.TradingError, match='type exactly "BUY 3 AAPL"'):
+        trader.confirm_batch(pv["preview_id"], "BUY AAPL")
+    with pytest.raises(t.TradingError, match="expired or was already used"):
+        trader.confirm_batch(pv["preview_id"], "BUY 3 AAPL")  # the failed attempt used it up
+    pv = trader.preview_batch(ladder())
+    trader.confirm_batch(pv["preview_id"], "BUY 3 AAPL")
+    with pytest.raises(t.TradingError):
+        trader.confirm_batch(pv["preview_id"], "BUY 3 AAPL")
+    assert len(placements(send)) == 3
+
+
+def test_a_ladder_preview_and_a_single_order_preview_are_not_interchangeable(rig):
+    trader, send, *_ = rig
+    single = trader.preview(order())
+    with pytest.raises(t.TradingError, match="not a ladder"):
+        trader.confirm_batch(single["preview_id"], "BUY AAPL")
+    batch = trader.preview_batch(ladder())
+    with pytest.raises(t.TradingError, match="not this kind of order"):
+        trader.confirm(batch["preview_id"], "BUY 3 AAPL")
+    assert not placements(send)
+
+
+def test_buy_rungs_sit_below_the_price_and_sell_rungs_above(rig):
+    trader, *_ = rig
+    wrong_side = "a buy rung sits at or below the price and a sell rung at or above it"
+    above = [{"quantity": 1, "offset_pct": -1}, {"quantity": 1, "offset_pct": 1}]
+    with pytest.raises(t.TradingError, match=f"rung 2: {wrong_side}"):
+        trader.preview_batch(ladder(rungs=above))  # a buy rung above the price
+    with pytest.raises(t.TradingError, match=f"rung 1: {wrong_side}"):
+        trader.preview_batch(ladder(side="sell", rungs=[{"quantity": 1, "offset_pct": -1}]))
+    rungs = [{"quantity": 1, "offset_pct": 1}, {"quantity": 1, "offset_pct": 2}]
+    pv = trader.preview_batch(ladder(side="sell", rungs=rungs))
+    assert [o["price"] for o in pv["orders"]] == [101.0, 102.0] and pv["phrase"] == "SELL 2 AAPL"
+
+
+def test_each_rung_and_the_whole_ladder_obey_the_limits_before_anything_is_sent(rig):
+    trader, send, *_ = rig
+    big = {"quantity": 20, "offset_pct": -1}  # $1,980: over the $1,000 per-order cap
+    with pytest.raises(t.TradingError, match="rung 2: .*per-order limit"):
+        trader.preview_batch(ladder(rungs=[{"quantity": 1, "offset_pct": -1}, big]))
+    three_800 = [{"quantity": 8, "offset_pct": -1}] * 3  # each fine, $2,376 together > $1,500 a day
+    with pytest.raises(t.TradingError, match="passes the .*daily limit"):
+        trader.preview_batch(ladder(rungs=three_800))
+    far = [{"quantity": 1, "offset_pct": -9}]  # beyond the 5% price band
+    with pytest.raises(t.TradingError, match="rung 1: .*away from the last price"):
+        trader.preview_batch(ladder(rungs=far))
+    assert not placements(send)
+
+
+def test_the_policy_caps_how_many_rungs_a_ladder_has(rig):
+    trader, *_ = rig
+    small = dataclasses.replace(trader.policy, max_batch_orders=2)
+    trader.policy = small
+    with pytest.raises(t.TradingError, match="at most 2 rungs"):
+        trader.preview_batch(ladder())
+    with pytest.raises(t.TradingError, match="at least one rung"):
+        trader.preview_batch(ladder(rungs=[]))
+    assert t.Policy().max_batch_orders == 10
+
+
+def test_a_ladder_stops_at_the_first_rung_the_broker_refuses(tmp_path):
+    class FailSecond(Fake):
+        placed = 0
+
+        def __call__(self, method, url, headers, body):
+            if method == "POST" and url.endswith("/orders"):
+                FailSecond.placed += 1
+                if FailSecond.placed == 2:
+                    return 400, {}, {"message": "Insufficient buying power"}
+            return super().__call__(method, url, headers, body)
+
+    send = FailSecond()
+    audit = t.Audit(tmp_path / "audit.jsonl")
+    trader = t.Trader(POLICY, {"schwab": lambda: t.SchwabTrader("tok", send)}, audit)
+    pv = trader.preview_batch(ladder())
+    done = trader.confirm_batch(pv["preview_id"], "BUY 3 AAPL")
+    assert done["placed"] is False and done["stopped"] is True and done["placed_count"] == 1
+    assert [r["status"] for r in done["results"]] == ["placed", "failed", "skipped"]
+    assert "Insufficient" in done["results"][1]["error"]
+    events = audit_events(audit)
+    assert events.count("placed") == 1 and "failed" in events and events[-1] == "batch_done"
+
+
+def test_a_market_that_moved_away_aborts_the_whole_ladder_before_the_first_order(rig):
+    trader, send, *_ = rig
+    pv = trader.preview_batch(ladder())
+    original = send.__call__
+
+    def moved(method, url, headers, body):
+        if "/marketdata/" in url:
+            symbol = url.split("symbols=")[1].split("&")[0]
+            return 200, {}, {symbol: {"quote": {"lastPrice": 80.0}}}  # 20% down: out of the band
+        return original(method, url, headers, body)
+
+    trader.brokers["schwab"] = lambda: t.SchwabTrader("tok", moved)
+    with pytest.raises(t.TradingError, match="nothing was sent"):
+        trader.confirm_batch(pv["preview_id"], "BUY 3 AAPL")
+    assert not [c for c in send.calls if c[0] == "POST" and c[1].endswith("/orders")]
+
+
+def test_max_batch_orders_is_read_from_the_policy_file(tmp_path):
+    path = tmp_path / "trading.toml"
+    path.write_text("enabled = true\nmax_batch_orders = 4\n")
+    path.chmod(0o600)
+    assert t.load_policy(path).max_batch_orders == 4
+    path.write_text("enabled = true\nmax_batch_orders = 0\n")
+    with pytest.raises(t.TradingError, match="between 1 and 50"):
+        t.load_policy(path)
