@@ -94,6 +94,14 @@ class Service:
         policy = self.policy_loader()
         return {
             "enabled": policy.enabled,
+            # the order form's one-click shapes (the policy's own, else the built-in set), so the
+            # Order templates tab can import them as saved templates
+            "templates": [
+                {"name": name, "side": side, "offset_pct": offset, "tif": tif, "session": session}
+                for name, side, offset, tif, session in (
+                    t.DEFAULT_TEMPLATES if policy.templates is None else policy.templates
+                )
+            ],
             "brokers": list(policy.brokers),
             "tickers": sorted(policy.tickers),
             "per_order_usd": policy.per_order_usd,
