@@ -6,6 +6,7 @@ enabled = false
 per_order_usd = 250        # reject any order whose cost is above this
 daily_usd = 500            # reject an order that would push the day's total above this (UTC day)
 price_band_pct = 3         # reject a limit price more than this far from the last price
+max_batch_orders = 10      # most rungs one ladder may have; each rung still obeys the caps and the band, and together they must fit the daily total
 
 # Only tickers listed here can be traded; BTC-USD style names route to Binance.US, the rest to Schwab.
 # tickers = ["*"] allows any ticker (the dollar caps and price band still apply).

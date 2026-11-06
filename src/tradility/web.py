@@ -436,6 +436,17 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         code, payload = _trader_call(app, "POST", f"/withdraw/{step}", body)
         return jsonify(payload), code
 
+    @app.post("/api/tradility-trade/batch/<step>")
+    def trader_batch(step: str):
+        """A ladder: one preview of several limit orders, then one confirmation that places them."""
+        if step not in {"preview", "confirm"}:
+            abort(404)
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "send a JSON object"}), 400
+        code, payload = _trader_call(app, "POST", f"/batch/{step}", body)
+        return jsonify(payload), code
+
     @app.post("/api/tradility-trade/fidelity-<step>")
     def trader_fidelity(step: str):
         path = {
