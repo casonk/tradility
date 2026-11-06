@@ -13,7 +13,12 @@ class PaneTemplatesTest(unittest.TestCase):
         self.html = PAGE.read_text()
 
     def test_ticket_has_a_ladder_container_and_template_loading(self):
-        for needle in ('id="trade-ladder"', "ensureTemplates().then(paintTemplates)", "startPaneLadder", "paneItems"):
+        for needle in (
+            'id="trade-ladder"',
+            "ensureTemplates().then(paintTemplates)",
+            "startPaneLadder",
+            "paneItems",
+        ):
             self.assertIn(needle, self.html)
 
     def test_tab_and_pane_share_one_preview_and_confirm(self):
