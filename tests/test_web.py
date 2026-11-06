@@ -259,3 +259,12 @@ def test_detail_cards_the_live_price_moves_have_ids_and_a_partial_repaint(web_cl
         "Object.assign(detailRecord, liveIndicators",
     ):
         assert hook in page, hook
+
+
+def test_the_standalone_page_shows_its_name_once(web_client):
+    client, _ = web_client
+    page = client.get("/").get_data(as_text=True)
+    assert page.count("📈 Tradility") == 1  # one header, not an app bar plus a header
+    assert "standalone-nav" not in page
+    assert 'class="header-title" href="/"' in page and "Standalone web application" in page
+    assert 'id="meta-generated"' in page  # the updated time still has its place
