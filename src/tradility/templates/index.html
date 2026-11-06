@@ -463,6 +463,7 @@
     .tpl-badge.sell { color: var(--red); border-color: var(--red); }
     .tpl-form input, .tpl-form select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 7px; font-size: 12px; }
     .tpl-form input[type=number] { width: 78px; }
+    .tpl-form #tpl-side { min-width: 170px; }
     .tpl-form button, .tpl-card button.tpl-btn { border: 1px solid var(--border); background: var(--surface2); color: var(--text); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
     .tpl-form button.primary, .tpl-card button.primary { border-color: var(--accent); color: var(--accent); }
     .tpl-form button.danger { border-color: var(--red); color: var(--red); }
@@ -472,6 +473,8 @@
     .tpl-row { margin-bottom: 8px; }
     .tpl-total td { border-top: 2px solid var(--border); font-weight: 700; }
     .tpl-result-ok { color: var(--green); font-weight: 700; }
+    .tpl-side-buy { color: var(--green); font-weight: 700; }
+    .tpl-side-sell { color: var(--red); font-weight: 700; }
     .tpl-result-bad { color: var(--red); font-weight: 700; }
     .tpl-hint { color: var(--muted-fg); font-size: 11px; margin: 6px 0; }
     .tpl-card p { font-size: 12px; margin: 8px 0; }
@@ -3128,6 +3131,9 @@
   const tplBlank = () => ({id: '', name: '', side: 'buy', tif: 'gtc', session: 'normal',
     rungs: [{quantity: 1, offset_pct: -1}, {quantity: 2, offset_pct: -2}, {quantity: 3, offset_pct: -3}]});
   const tplSign = side => (side === 'sell' ? 1 : -1);
+  // a rung's own side in a two-sided template, else the template's
+  const rungSide = (d, r) => (d.side === 'both' ? r.side : d.side);
+  const rungSign = (d, r) => tplSign(rungSide(d, r));
   const tplOptions = (choices, value) => choices.map(([v, label]) =>
     `<option value="${v}" ${v === value ? 'selected' : ''}>${label}</option>`).join('');
   const tplIsCoin = ticker => /-USD$/.test(ticker);
@@ -3171,6 +3177,10 @@
   }
 
   function rungText(r) { return `${Number(r.quantity)}×${Math.abs(Number(r.offset_pct))}%`; }
+  function rungsText(t) {
+    if (t.side !== 'both') return t.rungs.map(rungText).join(', ');
+    return ['buy', 'sell'].map(side => `${side} ${t.rungs.filter(r => r.side === side).map(rungText).join(', ')}`).join(' · ');
+  }
 
   // The order form's one-click shapes come from the trading policy (or the built-in set). They can be
   // imported as one-rung templates (quantity 1, to edit), so every template lives in one place.
@@ -3208,8 +3218,8 @@
     renderImport();
     const box = document.getElementById('tpl-saved');
     box.innerHTML = tplList.length ? tplList.map(t => `<button type="button" class="tpl-item ${tplDraft && tplDraft.id === t.id ? 'active' : ''}" data-open="${esc(t.id)}">
-        <strong>${esc(t.name)}</strong><span class="tpl-badge ${esc(t.side)}">${esc(t.side)}</span>
-        <small>${esc(t.rungs.map(rungText).join(', '))}</small></button>`).join('')
+        <strong>${esc(t.name)}</strong><span class="tpl-badge ${esc(t.side)}">${t.side === 'both' ? 'buy + sell' : esc(t.side)}</span>
+        <small>${esc(rungsText(t))}</small></button>`).join('')
       : '<div class="tpl-hint">No templates yet. Build one on the right and save it.</div>';
     box.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => {
       const t = tplList.find(x => x.id === b.dataset.open);
@@ -3219,25 +3229,27 @@
 
   function renderBuilder() {
     const d = tplDraft, box = document.getElementById('tpl-builder');
-    const word = d.side === 'buy' ? 'below' : 'above';
+    const both = d.side === 'both';
+    const word = both ? 'from' : (d.side === 'buy' ? 'below' : 'above');
     box.innerHTML = `<h2>${d.id ? 'Edit template' : 'New template'}</h2>
       <div class="order-form tpl-row">
         <input id="tpl-name" placeholder="Name, e.g. Dip ladder" maxlength="40" value="${esc(d.name)}" aria-label="Template name">
-        <select id="tpl-side" aria-label="Side"><option value="buy" ${d.side === 'buy' ? 'selected' : ''}>buy</option><option value="sell" ${d.side === 'sell' ? 'selected' : ''}>sell</option></select>
+        <select id="tpl-side" aria-label="Side"><option value="buy" ${d.side === 'buy' ? 'selected' : ''}>buy</option><option value="sell" ${d.side === 'sell' ? 'selected' : ''}>sell</option><option value="both" ${both ? 'selected' : ''}>buy + sell (straddle)</option></select>
         <select id="tpl-session" aria-label="Trading hours">${tplOptions(TPL_SESSIONS, d.session)}</select>
         <select id="tpl-tif" aria-label="Duration">${tplOptions(TPL_TIFS, d.tif)}</select>
       </div>
       <div class="tpl-gen">Generate
-        <input id="gen-count" type="number" min="1" max="20" value="3" aria-label="Rungs"> rungs, first
-        <input id="gen-first" type="number" step="any" min="0" value="1" aria-label="First percent"> % ${word}, every
+        <input id="gen-count" type="number" min="1" max="20" value="3" aria-label="Rungs"> rungs${both ? ' on each side' : ''}, first
+        <input id="gen-first" type="number" step="any" min="0" value="1" aria-label="First percent"> % ${both ? 'from the price' : word}, every
         <input id="gen-step" type="number" step="any" min="0" value="1" aria-label="Step percent"> %, first quantity
         <input id="gen-qty" type="number" step="any" min="0" value="1" aria-label="First quantity">, then +
         <input id="gen-qstep" type="number" step="any" min="0" value="1" aria-label="Quantity step"> each
         <button type="button" id="gen-go">Generate rungs</button></div>
-      <table class="orders-table tpl-rungs"><thead><tr><th>#</th><th>Quantity</th><th>% ${word} the price</th><th></th></tr></thead><tbody>
+      <table class="orders-table tpl-rungs"><thead><tr><th>#</th>${both ? '<th>Side</th>' : ''}<th>Quantity</th><th>% ${both ? 'from the price (buys below, sells above)' : word + ' the price'}</th><th></th></tr></thead><tbody>
         ${d.rungs.map((r, i) => `<tr><td>${i + 1}</td>
+          ${both ? `<td><select data-rside="${i}" aria-label="Rung ${i + 1} side"><option value="buy" ${r.side === 'buy' ? 'selected' : ''}>buy</option><option value="sell" ${r.side === 'sell' ? 'selected' : ''}>sell</option></select></td>` : ''}
           <td><input type="number" step="any" min="0" data-rung="${i}" data-field="quantity" value="${esc(String(r.quantity))}" aria-label="Rung ${i + 1} quantity"></td>
-          <td><input type="number" step="any" min="0" data-rung="${i}" data-field="pct" value="${esc(String(Math.abs(r.offset_pct)))}" aria-label="Rung ${i + 1} percent ${word}"></td>
+          <td><input type="number" step="any" min="0" data-rung="${i}" data-field="pct" value="${esc(String(Math.abs(r.offset_pct)))}" aria-label="Rung ${i + 1} percent"></td>
           <td><button type="button" data-del="${i}" aria-label="Remove rung ${i + 1}">×</button></td></tr>`).join('')}
       </tbody></table>
       <p><button type="button" id="tpl-add">+ Add rung</button></p>
@@ -3254,6 +3266,11 @@
     if (!el) return;
     const qty = d.rungs.reduce((a, r) => a + (Number(r.quantity) || 0), 0);
     const deepest = Math.max(0, ...d.rungs.map(r => Math.abs(Number(r.offset_pct)) || 0));
+    if (d.side === 'both') {
+      const n = side => d.rungs.filter(r => r.side === side).length;
+      el.textContent = `${n('buy')} buy${n('buy') === 1 ? '' : 's'} below + ${n('sell')} sell${n('sell') === 1 ? '' : 's'} above · ${qty} in total · deepest ${deepest}% from the price`;
+      return;
+    }
     el.textContent = `${d.rungs.length} rung${d.rungs.length === 1 ? '' : 's'} · ${qty} in total · deepest ${deepest}% ${d.side === 'buy' ? 'below' : 'above'} the price`;
   }
 
@@ -3264,29 +3281,50 @@
     $('tpl-session').addEventListener('change', e => { d.session = e.target.value; });
     $('tpl-tif').addEventListener('change', e => { d.tif = e.target.value; });
     $('tpl-side').addEventListener('change', e => {
-      d.side = e.target.value;
-      d.rungs.forEach(r => { r.offset_pct = tplSign(d.side) * Math.abs(Number(r.offset_pct) || 0); });
+      const before = d.side, next = e.target.value, mirror = r => ({quantity: r.quantity, offset_pct: -r.offset_pct, side: r.side === 'buy' ? 'sell' : 'buy'});
+      if (next === 'both') {
+        const own = d.rungs.map(r => ({quantity: r.quantity, offset_pct: r.offset_pct, side: before}));
+        d.rungs = [...own, ...own.map(mirror)];
+      } else if (before === 'both') {
+        const kept = d.rungs.filter(r => r.side === next).map(r => ({quantity: r.quantity, offset_pct: r.offset_pct}));
+        d.rungs = kept.length ? kept : d.rungs.map(r => ({quantity: r.quantity, offset_pct: tplSign(next) * Math.abs(r.offset_pct)}));
+      } else {
+        d.rungs.forEach(r => { r.offset_pct = tplSign(next) * Math.abs(Number(r.offset_pct) || 0); });
+      }
+      d.side = next;
       tplPreview = null; renderBuilder(); renderRun();
     });
+    box.querySelectorAll('[data-rside]').forEach(select => select.addEventListener('change', () => {
+      const r = d.rungs[Number(select.dataset.rside)];
+      r.side = select.value;
+      r.offset_pct = rungSign(d, r) * Math.abs(Number(r.offset_pct) || 0);
+      renderBuilder();
+    }));
     box.querySelectorAll('[data-rung]').forEach(input => input.addEventListener('input', () => {
       const r = d.rungs[Number(input.dataset.rung)], v = Number(input.value);
-      if (input.dataset.field === 'quantity') r.quantity = v; else r.offset_pct = tplSign(d.side) * Math.abs(v);
+      if (input.dataset.field === 'quantity') r.quantity = v; else r.offset_pct = rungSign(d, r) * Math.abs(v);
       updateSummary();
     }));
     box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
       d.rungs.splice(Number(b.dataset.del), 1); renderBuilder();
     }));
     $('tpl-add').addEventListener('click', () => {
-      const last = d.rungs[d.rungs.length - 1] || {quantity: 1, offset_pct: 0};
-      d.rungs.push({quantity: last.quantity, offset_pct: tplSign(d.side) * (Math.abs(last.offset_pct) + 1)});
+      const last = d.rungs[d.rungs.length - 1] || {quantity: 1, offset_pct: 0, side: 'buy'};
+      const side = d.side === 'both' ? last.side : d.side;
+      const added = {quantity: last.quantity, offset_pct: tplSign(side) * (Math.abs(last.offset_pct) + 1)};
+      if (d.side === 'both') added.side = side;
+      d.rungs.push(added);
       renderBuilder();
     });
     $('gen-go').addEventListener('click', () => {
-      const n = Math.max(1, Math.min(20, Math.floor(Number($('gen-count').value) || 1)));
+      const n = Math.max(1, Math.min(d.side === 'both' ? 10 : 20, Math.floor(Number($('gen-count').value) || 1)));
       const first = Number($('gen-first').value) || 0, step = Number($('gen-step').value) || 0;
       const qty = Number($('gen-qty').value) || 0, qstep = Number($('gen-qstep').value) || 0;
       const round = x => Math.round(x * 1e6) / 1e6;
-      d.rungs = Array.from({length: n}, (_, i) => ({quantity: round(qty + qstep * i), offset_pct: tplSign(d.side) * round(first + step * i)}));
+      const make = (side, i) => ({...(d.side === 'both' ? {side} : {}), quantity: round(qty + qstep * i), offset_pct: tplSign(side) * round(first + step * i)});
+      d.rungs = d.side === 'both'
+        ? [...Array.from({length: n}, (_, i) => make('buy', i)), ...Array.from({length: n}, (_, i) => make('sell', i))]
+        : Array.from({length: n}, (_, i) => make(d.side, i));
       renderBuilder();
     });
     $('tpl-save').addEventListener('click', saveTemplate);
@@ -3356,7 +3394,8 @@
     const account = document.getElementById('run-account').value;
     if (!ticker) { runError('Enter a ticker.'); return; }
     if (!tplIsCoin(ticker) && !account) { runError('Choose the Schwab account.'); return; }
-    const body = {ticker, side: d.side, rungs: d.rungs.map(r => ({quantity: Number(r.quantity), offset_pct: Number(r.offset_pct)}))};
+    const body = {ticker, rungs: d.rungs.map(r => ({quantity: Number(r.quantity), offset_pct: Number(r.offset_pct), ...(d.side === 'both' ? {side: r.side} : {})}))};
+    if (d.side !== 'both') body.side = d.side;
     if (!tplIsCoin(ticker)) Object.assign(body, {account, tif: d.tif, session: d.session});
     try {
       tplPreview = await sendOrder('POST', '/api/tradility-trade/batch/preview', body);
@@ -3367,12 +3406,13 @@
   function renderPreview() {
     const p = tplPreview, box = document.getElementById('tpl-preview');
     if (!p || !box) return;
-    const word = p.side === 'buy' ? 'below' : 'above';
-    box.innerHTML = `<table class="orders-table"><thead><tr><th>#</th><th class="num">Qty</th><th class="num">Limit</th><th class="num">% ${word}</th><th class="num">Cost</th><th></th></tr></thead><tbody>
-      ${p.orders.map((o, i) => `<tr><td>${i + 1}</td><td class="num">${esc(String(o.quantity))}</td><td class="num">${fmtPrice(o.price)}</td>
+    const both = p.side === 'both', word = both ? 'from price' : (p.side === 'buy' ? 'below' : 'above');
+    box.innerHTML = `<table class="orders-table"><thead><tr><th>#</th>${both ? '<th>Side</th>' : ''}<th class="num">Qty</th><th class="num">Limit</th><th class="num">% ${word}</th><th class="num">Cost</th><th></th></tr></thead><tbody>
+      ${p.orders.map((o, i) => `<tr><td>${i + 1}</td>${both ? `<td class="tpl-side-${o.side === 'sell' ? 'sell' : 'buy'}">${esc(o.side)}</td>` : ''}<td class="num">${esc(String(o.quantity))}</td><td class="num">${fmtPrice(o.price)}</td>
         <td class="num">${Math.abs(o.offset_pct)}%</td><td class="num">${money(o.notional)}</td>
         <td>${(o.warnings || []).map(w => `<span class="trade-warn">${esc(w)}</span>`).join(' ')}</td></tr>`).join('')}
-      <tr class="tpl-total"><td colspan="4">${p.count} ${esc(p.side)} orders on ${esc(p.ticker)} at a live price of ${fmtPrice(p.last_price)}</td><td class="num">${money(p.total_notional)}</td><td></td></tr>
+      <tr class="tpl-total"><td colspan="${both ? 5 : 4}">${both ? `${p.counts.buy} buys below + ${p.counts.sell} sells above` : `${p.count} ${esc(p.side)} orders`} on ${esc(p.ticker)} at a live price of ${fmtPrice(p.last_price)}</td><td class="num">${money(p.total_notional)}</td><td></td></tr>
+      ${both ? `<tr><td colspan="${both ? 5 : 4}" class="tpl-hint">Buys ${money(p.notional_by_side.buy)} · sells ${money(p.notional_by_side.sell)}. Both sides count toward your limits, and the sells must be covered by what the account holds.</td><td></td><td></td></tr>` : ''}
       </tbody></table>
       <div class="orders-sync">Limits: ${money(p.limits.per_order_usd)} per order · ${money(p.limits.spent_today)} sent today of ${money(p.limits.daily_usd)} · ${money(p.limits.remaining_today)} left after this ladder.</div>
       ${(p.warnings || []).map(w => `<div class="trade-warn">${esc(w)}</div>`).join('')}
@@ -3409,8 +3449,8 @@
       <div class="${done.placed ? 'tpl-result-ok' : 'tpl-result-bad'}">${done.placed
         ? `All ${done.count} orders placed on ${esc(p.ticker)}.`
         : `Stopped after ${done.placed_count} of ${done.count} orders. The ones placed are still open; the rest were not sent.`}</div>
-      <table class="orders-table"><thead><tr><th>#</th><th class="num">Qty</th><th class="num">Limit</th><th>Result</th></tr></thead><tbody>
-      ${done.results.map(r => `<tr><td>${r.index}</td><td class="num">${esc(String(r.order.quantity))}</td><td class="num">${fmtPrice(r.order.price)}</td>
+      <table class="orders-table"><thead><tr><th>#</th><th>Side</th><th class="num">Qty</th><th class="num">Limit</th><th>Result</th></tr></thead><tbody>
+      ${done.results.map(r => `<tr><td>${r.index}</td><td>${esc(r.order.side)}</td><td class="num">${esc(String(r.order.quantity))}</td><td class="num">${fmtPrice(r.order.price)}</td>
         <td class="${r.status === 'placed' ? 'tpl-result-ok' : r.status === 'failed' ? 'tpl-result-bad' : ''}">${icon[r.status] || esc(r.status)}${r.error ? ' — ' + esc(r.error) : ''}${r.broker_order_id ? ' (' + esc(String(r.broker_order_id)) + ')' : ''}</td></tr>`).join('')}
       </tbody></table>`;
   }

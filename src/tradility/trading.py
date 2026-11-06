@@ -319,14 +319,28 @@ def parse_order(raw: Any) -> Order:
 
 @dataclass(frozen=True)
 class Batch:
-    """A ladder: several limit orders on one ticker and side, previewed and confirmed together."""
+    """A ladder: several limit orders on one ticker, previewed and confirmed together.
+
+    A ladder is one side (buys below the price or sells above it) or both at once (a straddle of
+    orders around the price, buys below and sells above)."""
 
     ticker: str
-    side: str
     orders: tuple[Order, ...]
 
     @property
+    def counts(self) -> dict[str, int]:
+        return {side: sum(1 for o in self.orders if o.side == side) for side in SIDES}
+
+    @property
+    def side(self) -> str:
+        counts = self.counts
+        return "both" if counts["buy"] and counts["sell"] else ("buy" if counts["buy"] else "sell")
+
+    @property
     def phrase(self) -> str:
+        counts = self.counts
+        if self.side == "both":
+            return f"BUY {counts['buy']} SELL {counts['sell']} {self.ticker}"
         return f"{self.side.upper()} {len(self.orders)} {self.ticker}"
 
 
@@ -1170,13 +1184,54 @@ class Trader:
 
     # -- ladders: one preview and one confirmation for several limit orders ---------------------------
 
+    def _check_sells_are_held(self, orders: list[Order] | tuple[Order, ...]) -> None:
+        """A ladder's sell rungs must fit in what the chosen account holds right now.
+
+        An order to sell what you do not own can open a short position in a margin account, so a
+        ladder does not rely on the broker to catch it: the sell rungs of each ticker and account are
+        added up and compared with the live holding. If the holding cannot be read, sells are refused.
+        """
+        wanted: dict[tuple[str, str, str], float] = {}
+        for order in orders:
+            if order.side == "sell":
+                key = (order.ticker, order.broker, order.account)
+                wanted[key] = wanted.get(key, 0.0) + order.quantity
+        for (ticker, broker, account), quantity in wanted.items():
+            held = self._held_quantity(ticker, broker, account)
+            if held is None:
+                raise TradingError(
+                    f"cannot confirm how much {ticker} the account holds, so its sell rungs are refused"
+                )
+            if quantity > held + 1e-9:
+                raise TradingError(
+                    f"the sell rungs add up to {quantity:g} {ticker} but the account holds {held:g}"
+                )
+
+    def _held_quantity(self, ticker: str, broker: str, account: str) -> float | None:
+        if self.accounts_loader is None:
+            return None
+        try:
+            accounts = self.accounts_loader().get("accounts", [])
+        except Exception:  # noqa: BLE001 - an unreadable holding means "unknown", never "zero"
+            return None
+        symbol = ticker.removesuffix("-USD")
+        for a in accounts:
+            if a.get("broker") != broker:
+                continue
+            if broker == "schwab" and str(a.get("id")) != account:
+                continue
+            return float(((a.get("holdings") or {}).get(symbol) or {}).get("quantity", 0.0))
+        return None
+
     def preview_batch(self, raw: Any) -> dict[str, Any]:
         """Expand a ladder from the live price, check every rung and the whole, place nothing.
 
-        ``raw`` is ``{ticker, side, account, session, tif, rungs: [{quantity, offset_pct}]}``. A rung's
-        limit price is the live price moved by ``offset_pct`` (a buy rung at or below it, a sell rung at
-        or above it) and rounded to the broker's tick. Each rung obeys the per-order cap and the price
-        band, and together they must fit in what is left of the daily total."""
+        ``raw`` is ``{ticker, side, account, session, tif, rungs: [{quantity, offset_pct, side?}]}``.
+        A rung's side is its own ``side`` or else the ladder's, so one ladder can hold buys below the
+        price and sells above it. A rung's limit price is the live price moved by ``offset_pct`` (a buy
+        rung at or below it, a sell rung at or above it) and rounded to the broker's tick. Each rung
+        obeys the per-order cap and the price band, sell rungs must be covered by what the account
+        holds, and together the rungs must fit in what is left of the daily total."""
         if not isinstance(raw, dict):
             raise TradingError("a ladder is an object")
         rungs = raw.get("rungs")
@@ -1193,7 +1248,11 @@ class Trader:
             **{k: raw[k] for k in ("ticker", "side", "account", "session", "tif") if k in raw},
             "kind": "limit",
         }
-        probe = parse_order({**base, "quantity": 1, "price": 1})
+        first = rungs[0] if isinstance(rungs[0], dict) else {}
+        first_side = first.get("side") or base.get("side")
+        if first_side not in SIDES:
+            raise TradingError("rung 1: a rung needs a side, buy or sell")
+        probe = parse_order({**base, "side": first_side, "quantity": 1, "price": 1})
         broker = self._broker(probe)
         last = broker.last_price(probe.ticker)
         places = 2 if last >= 1 else 6
@@ -1209,14 +1268,19 @@ class Trader:
                     raise TradingError("offset_pct must be a number") from exc
                 if not math.isfinite(offset) or abs(offset) > 50:
                     raise TradingError("offset_pct must be within 50%")
-                if (probe.side == "buy" and offset > 0) or (probe.side == "sell" and offset < 0):
+                side = rung.get("side") or base.get("side")
+                if side not in SIDES:
+                    raise TradingError("a rung needs a side, buy or sell")
+                if (side == "buy" and offset > 0) or (side == "sell" and offset < 0):
                     raise TradingError(
                         "a buy rung sits at or below the price and a sell rung at or above it"
                     )
                 price = round(last * (1 + offset / 100), places)
                 if hasattr(broker, "round_price"):
                     price = broker.round_price(probe.ticker, price)
-                order = parse_order({**base, "quantity": rung.get("quantity"), "price": price})
+                order = parse_order(
+                    {**base, "side": side, "quantity": rung.get("quantity"), "price": price}
+                )
                 if hasattr(broker, "check_order"):
                     broker.check_order(order)
                 self._limits(order, last)
@@ -1224,6 +1288,10 @@ class Trader:
                 raise TradingError(f"rung {i}: {exc}") from exc
             orders.append(order)
             offsets.append(offset)
+        try:
+            self._check_sells_are_held(orders)
+        except TradingError as exc:
+            raise TradingError(str(exc)) from exc
         notionals = [o.quantity * o.price for o in orders]
         total, spent = sum(notionals), self.audit.spent_today()
         daily = self.policy.daily_usd
@@ -1242,7 +1310,7 @@ class Trader:
         prices = [o.price for o in orders]
         if len(set(prices)) < len(prices):
             warnings.append("two rungs round to the same price")
-        batch = Batch(probe.ticker, probe.side, tuple(orders))
+        batch = Batch(probe.ticker, tuple(orders))
         token = secrets.token_urlsafe(18)
         with self._lock:
             now = self.now()
@@ -1265,9 +1333,14 @@ class Trader:
             "broker": probe.broker,
             "ticker": batch.ticker,
             "side": batch.side,
+            "counts": batch.counts,
             "last_price": last,
             "count": len(orders),
             "total_notional": total,
+            "notional_by_side": {
+                side: sum(n for o, n in zip(orders, notionals, strict=True) if o.side == side)
+                for side in SIDES
+            },
             "orders": [
                 {
                     **_describe(order),
@@ -1322,6 +1395,10 @@ class Trader:
             raise TradingError(
                 f"the ladder (${total:,.2f}) no longer fits in the daily limit; nothing was sent"
             )
+        try:
+            self._check_sells_are_held(batch.orders)
+        except TradingError as exc:
+            raise TradingError(f"{exc}; nothing was sent") from exc
         results: list[dict[str, Any]] = []
         failed = False
         for i, order in enumerate(batch.orders, 1):
