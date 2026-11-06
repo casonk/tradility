@@ -380,6 +380,13 @@
     body.popout-chart .detail-chart-wrap { height: calc(100vh - 250px); min-height: 280px; }
     .detail-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(240px, 1fr); gap: 16px; }
     .detail-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 11px; padding: 14px; }
+    /* every card collapses to its title; the choice is remembered (see initCollapsibleCards) */
+    .cc-title { cursor: pointer; user-select: none; }
+    .cc-title::before { content: '▾'; display: inline-block; width: 1.1em; opacity: .7; }
+    .cc-collapsed > .cc-title::before, .cc-collapsed > .detail-card-head .cc-title::before { content: '▸'; }
+    body:not(.popout-chart) .detail-card.cc-collapsed:not(.chart-fs) > :not(.detail-card-title):not(.detail-card-head),
+    .tpl-card.cc-collapsed > :not(h2) { display: none; }
+    .detail-card.cc-collapsed .detail-card-title { margin-bottom: 0; }
     .detail-card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted-fg); font-weight: 750; margin-bottom: 9px; }
     .detail-range-buttons { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
     .detail-range-btn {
@@ -3596,6 +3603,49 @@
   document.getElementById('tpl-new').addEventListener('click', () => {
     tplDraft = tplBlank(); tplPreview = null; renderBuilder(); renderRun(); renderSaved();
   });
+
+  // Any card (a ticker's detail cards, the Order templates tab's cards) folds to its title row. The title is
+  // the handle; state lives in a stored list so it survives re-renders, ticker changes and reloads. The cards
+  // are rebuilt often, so a cheap observer re-applies it after DOM changes instead of binding per card.
+  function initCollapsibleCards() {
+    const KEY = 'tradility.cardsClosed', CARDS = '.detail-card, .tpl-card';
+    const read = () => { try { return new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch (err) { return new Set(); } };
+    const titleOf = card => card.querySelector(':scope > .detail-card-title, :scope > .detail-card-head .detail-card-title, :scope > h2');
+    const keyOf = (card, title) => card.id || (title.textContent || '').trim().toLowerCase();
+    function apply() {
+      const closed = read();
+      document.querySelectorAll(CARDS).forEach(card => {
+        const title = titleOf(card);
+        if (!title) return;
+        if (!title.classList.contains('cc-title')) {
+          title.classList.add('cc-title'); title.setAttribute('role', 'button'); title.tabIndex = 0;
+        }
+        const shut = closed.has(keyOf(card, title));
+        card.classList.toggle('cc-collapsed', shut);
+        title.setAttribute('aria-expanded', String(!shut));
+      });
+    }
+    function toggle(title) {
+      const card = title.closest(CARDS);
+      if (!card || card.classList.contains('chart-fs')) return;
+      const set = read(), key = keyOf(card, title);
+      if (set.has(key)) set.delete(key); else set.add(key);
+      try { localStorage.setItem(KEY, JSON.stringify([...set])); } catch (err) { /* private mode: not remembered */ }
+      apply();
+    }
+    document.addEventListener('click', e => { const t = e.target.closest('.cc-title'); if (t) toggle(t); });
+    document.addEventListener('keydown', e => {
+      const t = e.target.closest && e.target.closest('.cc-title');
+      if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(t); }
+    });
+    let queued = false;
+    new MutationObserver(muts => {
+      if (queued || !muts.some(m => m.addedNodes.length)) return;
+      queued = true; requestAnimationFrame(() => { queued = false; apply(); });
+    }).observe(document.body, {childList: true, subtree: true});
+    apply();
+  }
+  initCollapsibleCards();
 
   loadData().then(() => {
     startLive();
