@@ -254,18 +254,24 @@ def load_tickers_from_holdings(holdings_path: Path) -> dict[str, dict[str, str]]
     Returns a dict of ticker → {name, asset_class}.
     """
     data = json.loads(holdings_path.read_text(encoding="utf-8"))
+    holdings = [h for h in data.get("holdings", []) if str(h.get("ticker", "")).strip()]
+    # A symbol can be two assets (T is AT&T and a Binance coin). The coin is then shown as T-USD so it
+    # can never be mistaken for, or overwrite, the stock or fund that owns the plain symbol.
+    plain = {
+        str(h["ticker"]).strip().upper()
+        for h in holdings
+        if str(h.get("asset_class", "")) != "Crypto"
+    }
     result: dict[str, dict[str, str]] = {}
-    for h in data.get("holdings", []):
+    for h in holdings:
         ticker = str(h.get("ticker", "")).strip().upper()
-        if not ticker:
-            continue
         # Map Binance crypto tickers to Yahoo Finance format (e.g. BTC → BTC-USD)
         asset_class = str(h.get("asset_class", ""))
         yf_ticker = _to_yf_ticker(ticker, asset_class)
         result[yf_ticker] = {
             "name": str(h.get("description", "") or ""),
             "asset_class": asset_class,
-            "original_ticker": ticker,
+            "original_ticker": yf_ticker if asset_class == "Crypto" and ticker in plain else ticker,
         }
     return result
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 import pytest
 
@@ -203,3 +205,39 @@ def test_a_ticker_record_carries_indicator_variants_matching_the_standard_fields
     assert variants["sma"]["50"] == record["sma_50"] and variants["sma"]["200"] == record["sma_200"]
     assert set(variants["rsi"]) == {"7", "14", "21"}
     assert variants["sma"]["300"] is None  # 260 bars are too few for a 300-day average
+
+
+def test_a_coin_that_shares_a_symbol_with_a_stock_or_fund_is_listed_as_its_usd_pair(tmp_path):
+    from tradility.analyze import load_tickers_from_holdings
+
+    path = tmp_path / "holdings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "holdings": [
+                    {
+                        "ticker": "T",
+                        "instrument_id": "T",
+                        "asset_class": "Stocks",
+                        "description": "AT&T",
+                    },
+                    {"ticker": "T", "instrument_id": "crypto:T", "asset_class": "Crypto"},
+                    {"ticker": "BTC", "instrument_id": "BTC", "asset_class": "ETFs"},
+                    {"ticker": "BTC", "instrument_id": "crypto:BTC", "asset_class": "Crypto"},
+                    {"ticker": "ETH", "instrument_id": "crypto:ETH", "asset_class": "Crypto"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = load_tickers_from_holdings(path)
+    shown = {yf: meta["original_ticker"] for yf, meta in result.items()}
+    # the stock and the fund keep the plain symbols; each colliding coin shows as SYMBOL-USD
+    assert shown == {
+        "T": "T",
+        "T-USD": "T-USD",
+        "BTC": "BTC",
+        "BTC-USD": "BTC-USD",
+        "ETH-USD": "ETH",
+    }
+    assert result["T"]["name"] == "AT&T" and result["T-USD"]["asset_class"] == "Crypto"
