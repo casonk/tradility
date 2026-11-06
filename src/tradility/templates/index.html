@@ -300,6 +300,9 @@
     .template-chips button { border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 99px; padding: 2px 10px; font-size: 11px; cursor: pointer; }
     .template-chips button.buy { border-color: color-mix(in srgb, var(--green) 60%, var(--border)); }
     .template-chips button.sell { border-color: color-mix(in srgb, var(--red) 60%, var(--border)); }
+    .template-chips button.both { border-color: var(--accent); }
+    .template-chips .tpl-chip-label { flex-basis: 100%; font-size: 11px; color: var(--muted-fg); margin-top: 6px; }
+    .tpl-pane { margin-top: 6px; }
     .template-chips button.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
     .order-effect { font-size: 11px; min-width: 190px; }
     /* share bars: the fill is what you hold now, the lighter segment is the change an order makes,
@@ -2250,8 +2253,9 @@
         <button type="submit" class="primary" id="trade-submit">Preview</button>
       </form>
       <div class="template-chips" id="trade-templates" aria-label="Order templates"></div>
-      ${IS_POPOUT ? '' : `<div class="orders-sync"><a href="#templates" class="company-link" onclick="openLadder('${esc(detailTicker)}'); return false;">Build a ladder for ${esc(detailTicker)} →</a></div>`}
+      ${IS_POPOUT ? '' : `<div class="orders-sync"><a href="#templates" class="company-link" onclick="openLadder('${esc(detailTicker)}'); return false;">Edit templates or build a ladder for ${esc(detailTicker)} →</a></div>`}
       <div class="orders-sync" id="trade-default"></div>
+      <div id="trade-ladder" class="tpl-pane"></div>
       <div class="orders-sync" id="trade-funds"></div>
       <div id="trade-confirm">${tradeStep ? confirmPanel() : ''}</div>
       <div class="order-error" id="trade-error" role="alert"></div>
@@ -2593,17 +2597,9 @@
     paintTemplates();
   }
 
-  // One-click order shapes from the policy (default: buy 1/2/4/8% under the mark, sell 1/2/4/8% over).
-  // A template sets the side, a limit order, the price from the live mark and, if it names them, the
-  // duration and hours. You still enter the quantity and preview before anything is sent.
-  function paintTemplates() {
-    const box = document.getElementById('trade-templates');
-    if (!box || !tradeQuote) return;
-    const list = tradeQuote.templates || [];
-    box.innerHTML = list.map((t, i) => `<button type="button" class="${esc(t.side)}" data-template="${i}" title="${esc(t.side)} limit at ${fmtPrice(t.price)}">${esc(t.name)}</button>`).join('');
-    box.querySelectorAll('button').forEach(button => button.addEventListener('click', () => applyTemplate(list[Number(button.dataset.template)], button)));
-  }
-
+  // One-click order shapes: the policy's own (default: buy 1/2/4/8% under the mark, sell 1/2/4/8% over) and the
+  // saved templates (see paintTemplates). A single-order template sets the side, a limit order, the price from the
+  // live mark and, if it names them, the duration, hours and quantity; you preview before anything is sent.
   function applyTemplate(t, button) {
     const form = document.getElementById('trade-form');
     if (!form || !t) return;
@@ -2613,6 +2609,7 @@
     form.elements.price.value = t.price;
     if (form.elements.tif && t.tif) form.elements.tif.value = t.tif;
     if (form.elements.session && t.session) form.elements.session.value = t.session;
+    if (t.quantity) form.elements.quantity.value = t.quantity;
     if (form.elements.tif) syncOrderChoices(form);
     document.querySelectorAll('#trade-templates button').forEach(b => b.classList.toggle('active', b === button));
     document.getElementById('trade-default').textContent =
@@ -2845,6 +2842,8 @@
       });
       if (tradeQuote && tradeQuote.ticker === detailTicker) { fillDefaults(); paintTemplates(); }
       else if (!tradeQuote) loadQuote();
+      ensureTemplates().then(paintTemplates);
+      paintPaneLadder();
     }
     const stage = box.querySelector('#fid-stage');
     if (stage) stage.addEventListener('click', stageOnFidelity);
@@ -3174,6 +3173,7 @@
       tplList = (res.ok && data.ok) ? data.templates : [];
     } catch (err) { tplList = []; }
     renderSaved();
+    paintTemplates();
   }
 
   function rungText(r) { return `${Number(r.quantity)}×${Math.abs(Number(r.offset_pct))}%`; }
@@ -3387,6 +3387,23 @@
 
   function runError(message) { const el = document.getElementById('run-error'); if (el) el.textContent = message || ''; }
 
+  // The ladder preview and confirmation are shared by the Order templates tab and the trading pane in a
+  // ticker's detail view. A "view" names where each piece lives and where its state is kept.
+  let panePreview = null, paneResult = null;
+  const LADDER_TAB = {box: 'tpl-preview', err: 'run-error', go: 'run-go', phrase: 'run-phrase', discard: 'run-discard',
+    get: () => tplPreview, set: v => { tplPreview = v; }};
+  const LADDER_PANE = {box: 'trade-ladder', err: 'trade-error', go: 'pane-go', phrase: 'pane-phrase', discard: 'pane-discard',
+    get: () => panePreview, set: v => { panePreview = v; }};
+  const viewError = (view, message) => { const el = document.getElementById(view.err); if (el) el.textContent = message || ''; };
+
+  // The request the trader previews: the template's rungs (each with its side when two-sided) for a ticker.
+  function ladderBody(d, ticker, account) {
+    const body = {ticker, rungs: d.rungs.map(r => ({quantity: Number(r.quantity), offset_pct: Number(r.offset_pct), ...(d.side === 'both' ? {side: r.side} : {})}))};
+    if (d.side !== 'both') body.side = d.side;
+    if (!tplIsCoin(ticker)) Object.assign(body, {account, tif: d.tif, session: d.session});
+    return body;
+  }
+
   async function previewLadder() {
     runError(''); tplPreview = null;
     document.getElementById('tpl-preview').innerHTML = '';
@@ -3394,17 +3411,14 @@
     const account = document.getElementById('run-account').value;
     if (!ticker) { runError('Enter a ticker.'); return; }
     if (!tplIsCoin(ticker) && !account) { runError('Choose the Schwab account.'); return; }
-    const body = {ticker, rungs: d.rungs.map(r => ({quantity: Number(r.quantity), offset_pct: Number(r.offset_pct), ...(d.side === 'both' ? {side: r.side} : {})}))};
-    if (d.side !== 'both') body.side = d.side;
-    if (!tplIsCoin(ticker)) Object.assign(body, {account, tif: d.tif, session: d.session});
     try {
-      tplPreview = await sendOrder('POST', '/api/tradility-trade/batch/preview', body);
+      tplPreview = await sendOrder('POST', '/api/tradility-trade/batch/preview', ladderBody(d, ticker, account));
       renderPreview();
     } catch (err) { runError(err.message); }
   }
 
-  function renderPreview() {
-    const p = tplPreview, box = document.getElementById('tpl-preview');
+  function renderPreview(view = LADDER_TAB) {
+    const p = view.get(), box = document.getElementById(view.box);
     if (!p || !box) return;
     const both = p.side === 'both', word = both ? 'from price' : (p.side === 'buy' ? 'below' : 'above');
     box.innerHTML = `<table class="orders-table"><thead><tr><th>#</th>${both ? '<th>Side</th>' : ''}<th class="num">Qty</th><th class="num">Limit</th><th class="num">% ${word}</th><th class="num">Cost</th><th></th></tr></thead><tbody>
@@ -3417,35 +3431,35 @@
       <div class="orders-sync">Limits: ${money(p.limits.per_order_usd)} per order · ${money(p.limits.spent_today)} sent today of ${money(p.limits.daily_usd)} · ${money(p.limits.remaining_today)} left after this ladder.</div>
       ${(p.warnings || []).map(w => `<div class="trade-warn">${esc(w)}</div>`).join('')}
       <p>Type <strong>${esc(p.phrase)}</strong> to confirm. This sends ${p.count} real orders, and stops at the first one that fails.</p>
-      <div class="order-form"><input type="text" id="run-phrase" autocomplete="off" aria-label="Confirmation phrase" style="max-width:200px">
-        <button type="button" class="primary" id="run-go">Place ${p.count} orders</button>
-        <button type="button" id="run-discard">Discard</button></div>`;
-    document.getElementById('run-discard').addEventListener('click', () => { tplPreview = null; box.innerHTML = ''; runError(''); });
-    document.getElementById('run-go').addEventListener('click', confirmLadder);
-    document.getElementById('run-phrase').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); confirmLadder(); } });
+      <div class="order-form"><input type="text" id="${view.phrase}" autocomplete="off" aria-label="Confirmation phrase" style="max-width:200px">
+        <button type="button" class="primary" id="${view.go}">Place ${p.count} orders</button>
+        <button type="button" id="${view.discard}">Discard</button></div>`;
+    document.getElementById(view.discard).addEventListener('click', () => { view.set(null); box.innerHTML = ''; viewError(view, ''); });
+    document.getElementById(view.go).addEventListener('click', () => confirmLadder(view));
+    document.getElementById(view.phrase).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); confirmLadder(view); } });
   }
 
-  async function confirmLadder() {
-    const p = tplPreview;
+  async function confirmLadder(view = LADDER_TAB) {
+    const p = view.get();
     if (!p) return;
-    runError('');
-    const phrase = document.getElementById('run-phrase').value;
-    document.getElementById('run-go').disabled = true;
+    viewError(view, '');
+    const phrase = document.getElementById(view.phrase).value;
+    document.getElementById(view.go).disabled = true;
     try {
       const done = await sendOrder('POST', '/api/tradility-trade/batch/confirm', {preview_id: p.preview_id, phrase});
-      tplPreview = null;
-      renderResults(done, p);
+      view.set(null);
+      renderResults(done, p, view);
     } catch (err) {
       // a refused confirmation uses the preview up, so the ladder has to be previewed again
-      tplPreview = null;
-      document.getElementById('tpl-preview').innerHTML = '';
-      runError(`${err.message} Preview the ladder again to retry.`);
+      view.set(null);
+      document.getElementById(view.box).innerHTML = '';
+      viewError(view, `${err.message} Preview the ladder again to retry.`);
     }
   }
 
-  function renderResults(done, p) {
+  function renderResults(done, p, view = LADDER_TAB) {
     const icon = {placed: '✓ placed', failed: '✗ failed', skipped: '– not sent'};
-    document.getElementById('tpl-preview').innerHTML = `
+    const html = `
       <div class="${done.placed ? 'tpl-result-ok' : 'tpl-result-bad'}">${done.placed
         ? `All ${done.count} orders placed on ${esc(p.ticker)}.`
         : `Stopped after ${done.placed_count} of ${done.count} orders. The ones placed are still open; the rest were not sent.`}</div>
@@ -3453,6 +3467,94 @@
       ${done.results.map(r => `<tr><td>${r.index}</td><td>${esc(r.order.side)}</td><td class="num">${esc(String(r.order.quantity))}</td><td class="num">${fmtPrice(r.order.price)}</td>
         <td class="${r.status === 'placed' ? 'tpl-result-ok' : r.status === 'failed' ? 'tpl-result-bad' : ''}">${icon[r.status] || esc(r.status)}${r.error ? ' — ' + esc(r.error) : ''}${r.broker_order_id ? ' (' + esc(String(r.broker_order_id)) + ')' : ''}</td></tr>`).join('')}
       </tbody></table>`;
+    document.getElementById(view.box).innerHTML = html;
+    if (view === LADDER_PANE) paneResult = {ticker: p.ticker, html};  // kept across the pane's re-renders
+  }
+
+  // ── Saved templates in the trading pane ──────────────────────────────────────
+  // Every saved template is a chip in the pane's order ticket (the policy's one-click shapes appear too
+  // until they are saved). A single-order template fills the form as the one-click shapes always did; a
+  // ladder or straddle previews right here for the account chosen above, with the same typed confirmation.
+  let tplLoadedOnce = false, paneList = [];
+  const tplIsLadder = t => t.side === 'both' || t.rungs.length > 1;
+
+  async function ensureTemplates() {
+    if (tplLoadedOnce) return;
+    tplLoadedOnce = true;
+    await loadTemplates();
+  }
+
+  function paneItems() {
+    const saved = new Set(tplList.map(t => t.name.toLowerCase()));
+    return [...tplList.map(t => ({saved: t})),
+            ...((tradeQuote && tradeQuote.templates) || []).filter(q => !saved.has(String(q.name).toLowerCase())).map(q => ({policy: q}))];
+  }
+
+  const paneRungPrice = (mark, offset) => Number((mark * (1 + offset / 100)).toFixed(mark >= 1 ? 2 : 6));
+
+  function paneChip(i) {
+    const it = paneList[i];
+    if (it.policy) return `<button type="button" class="${esc(it.policy.side)}" data-pick="${i}" title="${esc(it.policy.side)} limit at ${fmtPrice(it.policy.price)}">${esc(it.policy.name)}</button>`;
+    const t = it.saved;
+    if (tplIsLadder(t)) return `<button type="button" class="${esc(t.side)}" data-pick="${i}" title="${esc(rungsText(t))}">${esc(t.name)}</button>`;
+    const price = paneRungPrice(tradeQuote.mark, Number(t.rungs[0].offset_pct));
+    return `<button type="button" class="${esc(t.side)}" data-pick="${i}" title="${esc(t.side)} ${esc(String(t.rungs[0].quantity))} at ${fmtPrice(price)} (${Number(t.rungs[0].offset_pct)}%)">${esc(t.name)}</button>`;
+  }
+
+  function paintTemplates() {
+    const box = document.getElementById('trade-templates');
+    if (!box || !tradeQuote) return;
+    paneList = paneItems();
+    const singles = [], ladders = [];
+    paneList.forEach((it, i) => (it.saved && tplIsLadder(it.saved) ? ladders : singles).push(i));
+    box.innerHTML = singles.map(paneChip).join('')
+      + (ladders.length ? `<div class="tpl-chip-label">Ladders and straddles: pick an account above, then a ladder to preview it here</div>${ladders.map(paneChip).join('')}` : '');
+    box.querySelectorAll('button').forEach(button => button.addEventListener('click', () => pickTemplate(Number(button.dataset.pick), button)));
+  }
+
+  function pickTemplate(i, button) {
+    const it = paneList[i];
+    if (!it) return;
+    if (it.policy) { clearPaneLadder(); return applyTemplate(it.policy, button); }
+    const t = it.saved;
+    if (tplIsLadder(t)) return startPaneLadder(t, button);
+    clearPaneLadder();
+    const offset = Number(t.rungs[0].offset_pct);
+    const same = ((tradeQuote && tradeQuote.templates) || []).find(q => q.side === t.side && Math.abs(Number(q.offset_pct) - offset) < 1e-9);
+    applyTemplate({name: t.name, side: t.side, offset_pct: offset, price: same ? same.price : paneRungPrice(tradeQuote.mark, offset),
+      tif: t.tif, session: t.session, quantity: Number(t.rungs[0].quantity)}, button);
+  }
+
+  function clearPaneLadder() {
+    panePreview = null; paneResult = null;
+    const box = document.getElementById('trade-ladder');
+    if (box) box.innerHTML = '';
+  }
+
+  async function startPaneLadder(t, button) {
+    const form = document.getElementById('trade-form');
+    tradeFail('');
+    if (!form) return;
+    const account = form.elements.account ? form.elements.account.value : '';
+    if (!isCrypto()) {
+      if (!account) { tradeFail('Choose the account first, then pick the ladder.'); form.elements.account.focus(); return; }
+      if (account.startsWith('fid:')) { tradeFail('Ladders go to Schwab accounts and Binance.US coins; Fidelity has no order API.'); return; }
+    }
+    clearPaneLadder();
+    document.querySelectorAll('#trade-templates button').forEach(b => b.classList.toggle('active', b === button));
+    try {
+      panePreview = await sendOrder('POST', '/api/tradility-trade/batch/preview', ladderBody(t, detailTicker, account));
+      renderPreview(LADDER_PANE);
+    } catch (err) { tradeFail(err.message); }
+  }
+
+  // After the ticket is rebuilt: show this ticker's pending preview or last result again, never another's.
+  function paintPaneLadder() {
+    if (panePreview && panePreview.ticker === detailTicker) { renderPreview(LADDER_PANE); return; }
+    panePreview = null;
+    const box = document.getElementById('trade-ladder');
+    if (box && paneResult && paneResult.ticker === detailTicker) box.innerHTML = paneResult.html;
+    else paneResult = null;
   }
 
   document.getElementById('tpl-new').addEventListener('click', () => {
