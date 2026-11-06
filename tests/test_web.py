@@ -246,3 +246,16 @@ def test_an_analysis_file_with_bare_nan_is_served_as_strict_json(web_client):
     for url in ("/api/tradility-analysis", "/api/tradility-analysis/aapl"):
         body = client.get(url).get_data(as_text=True)
         json.loads(body, parse_constant=lambda name: (_ for _ in ()).throw(ValueError(name)))
+
+
+def test_detail_cards_the_live_price_moves_have_ids_and_a_partial_repaint(web_client):
+    client, _ = web_client
+    page = client.get("/").get_data(as_text=True)
+    for hook in (
+        'id="detail-rating-card"',
+        'id="detail-range-card"',
+        'id="detail-indicator-rows"',
+        "function paintDetailLiveCards",
+        "Object.assign(detailRecord, liveIndicators",
+    ):
+        assert hook in page, hook

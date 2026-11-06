@@ -1397,6 +1397,8 @@
       if (detailTicker !== ticker) return;   // stepped on to another card while this one loaded
       if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
       detailRecord = data.ticker;
+      detailRecord.close_price = detailRecord.last_price;  // the stored close, before any live overlay
+      Object.assign(detailRecord, liveIndicators[detailRecord.ticker] || {});  // already-polled live values
       renderTickerDetail(data);
       loadOrders(ticker);
       bindTargetForm();
@@ -1471,10 +1473,62 @@
     return ticker ? `https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/` : '';
   }
 
+  const plusMinus = value => `${Number(value ?? 0) >= 0 ? '+' : ''}${Number(value ?? 0)}`;
+
+  function ratingCardHtml(t) {
+    const components = t.technical_components || {};
+    return `
+            <div class="detail-card-title">Technical market rating</div>
+            <div class="detail-rating">
+              <span class="detail-rating-label ${ratingClass(t.technical_rating)}">${esc(ratingLabel(t.technical_rating))}</span>
+              <strong>${plusMinus(t.technical_score)} / 4</strong>
+            </div>
+            <div class="component-list">
+              <div class="component-row"><span>Long-term trend</span><strong>${plusMinus(components.long_term_trend)}</strong></div>
+              <div class="component-row"><span>VWAP momentum</span><strong>${plusMinus(components.vwap_momentum)}</strong></div>
+              <div class="component-row"><span>RSI reversion</span><strong>${plusMinus(components.rsi_reversion)}</strong></div>
+            </div>
+            <p class="detail-disclaimer">Rule-based technical composite—not analyst consensus or investment advice. Authorized analyst ratings remain a separate planned data source.</p>`;
+  }
+
+  // Where the price sits in its 52-week range; a live price beyond either end moves that end.
+  function rangePosition(t) {
+    const price = Number(t.last_price), low = Math.min(Number(t.low_52w), price), high = Math.max(Number(t.high_52w), price);
+    if (!Number.isFinite(price) || !Number.isFinite(low) || !Number.isFinite(high) || high === low) return t.range_position_52w;
+    return (price - low) / (high - low) * 100;
+  }
+
+  function rangeCardHtml(t) {
+    const pos = rangePosition(t);
+    const position = Math.min(100, Math.max(0, Number(pos ?? 0)));
+    const low = Number.isFinite(Number(t.low_52w)) ? Math.min(Number(t.low_52w), Number(t.last_price)) : t.low_52w;
+    const high = Number.isFinite(Number(t.high_52w)) ? Math.max(Number(t.high_52w), Number(t.last_price)) : t.high_52w;
+    return `
+            <div class="detail-card-title">52-week range</div>
+            <div class="range-track"><span class="range-marker" style="left:${position}%"></span></div>
+            <div class="range-labels"><span>${fmtPrice(low)}</span><span>${fmtPrice(high)}</span></div>
+            <div class="component-row" style="margin-top:8px"><span>Current position</span><strong>${pos == null ? '—' : Number(pos).toFixed(1) + '%'}</strong></div>`;
+  }
+
+  function indicatorRowsHtml(t) {
+    return `
+              <div class="detail-meta-row"><span>RSI 14</span><strong>${t.rsi_14 == null ? '—' : Number(t.rsi_14).toFixed(1)} · ${esc(t.rsi_14_signal || 'unknown')}</strong></div>
+              <div class="detail-meta-row"><span>VWAP 20</span><strong>${fmtPrice(t.vwap_20)} · ${esc(t.vwap_20_signal || 'unknown')}</strong></div>
+              <div class="detail-meta-row"><span>Trend</span><strong>${esc(t.long_term_trend || 'unknown')}</strong></div>`;
+  }
+
+  // Repaint only the parts the live price moves, never the whole dialog (an order form may be mid-edit).
+  function paintDetailLiveCards() {
+    if (!detailRecord) return;
+    const set = (id, html) => { const box = document.getElementById(id); if (box) box.innerHTML = html; };
+    set('detail-rating-card', ratingCardHtml(detailRecord));
+    set('detail-range-card', rangeCardHtml(detailRecord));
+    set('detail-indicator-rows', indicatorRowsHtml(detailRecord));
+  }
+
   function renderTickerDetail(data) {
     const t = data.ticker;
     const returns = t.returns || {};
-    const components = t.technical_components || {};
     const profile = t.company_profile || {};
     const companyName = profile.canonical_name || t.name || '';
     const website = safeExternalUrl(profile.website);
@@ -1483,7 +1537,6 @@
     const vision = profile.vision_statement
       ? esc(profile.vision_statement)
       : 'Not supplied by the current source';
-    const position = Math.min(100, Math.max(0, Number(t.range_position_52w ?? 0)));
     const returnLabels = [['1m','1M'], ['3m','3M'], ['1y','1Y'], ['3y','3Y'], ['5y','5Y']];
     document.getElementById('detail-dialog-title').textContent = t.ticker || 'Stock details';
     document.getElementById('detail-dialog-name').textContent =
@@ -1550,32 +1603,13 @@
           </section>
         </div>
         <div class="detail-stack">
-          <section class="detail-card">
-            <div class="detail-card-title">Technical market rating</div>
-            <div class="detail-rating">
-              <span class="detail-rating-label ${ratingClass(t.technical_rating)}">${esc(ratingLabel(t.technical_rating))}</span>
-              <strong>${Number(t.technical_score ?? 0) >= 0 ? '+' : ''}${Number(t.technical_score ?? 0)} / 4</strong>
-            </div>
-            <div class="component-list">
-              <div class="component-row"><span>Long-term trend</span><strong>${Number(components.long_term_trend ?? 0) >= 0 ? '+' : ''}${Number(components.long_term_trend ?? 0)}</strong></div>
-              <div class="component-row"><span>VWAP momentum</span><strong>${Number(components.vwap_momentum ?? 0) >= 0 ? '+' : ''}${Number(components.vwap_momentum ?? 0)}</strong></div>
-              <div class="component-row"><span>RSI reversion</span><strong>${Number(components.rsi_reversion ?? 0) >= 0 ? '+' : ''}${Number(components.rsi_reversion ?? 0)}</strong></div>
-            </div>
-            <p class="detail-disclaimer">Rule-based technical composite—not analyst consensus or investment advice. Authorized analyst ratings remain a separate planned data source.</p>
-          </section>
+          <section class="detail-card" id="detail-rating-card">${ratingCardHtml(t)}</section>
           ${fundamentalsCardHtml(t)}
-          <section class="detail-card">
-            <div class="detail-card-title">52-week range</div>
-            <div class="range-track"><span class="range-marker" style="left:${position}%"></span></div>
-            <div class="range-labels"><span>${fmtPrice(t.low_52w)}</span><span>${fmtPrice(t.high_52w)}</span></div>
-            <div class="component-row" style="margin-top:8px"><span>Current position</span><strong>${t.range_position_52w == null ? '—' : Number(t.range_position_52w).toFixed(1) + '%'}</strong></div>
-          </section>
+          <section class="detail-card" id="detail-range-card">${rangeCardHtml(t)}</section>
           <section class="detail-card">
             <div class="detail-card-title">Indicators and provenance</div>
             <div class="component-list">
-              <div class="detail-meta-row"><span>RSI 14</span><strong>${t.rsi_14 == null ? '—' : Number(t.rsi_14).toFixed(1)} · ${esc(t.rsi_14_signal || 'unknown')}</strong></div>
-              <div class="detail-meta-row"><span>VWAP 20</span><strong>${fmtPrice(t.vwap_20)} · ${esc(t.vwap_20_signal || 'unknown')}</strong></div>
-              <div class="detail-meta-row"><span>Trend</span><strong>${esc(t.long_term_trend || 'unknown')}</strong></div>
+              <span id="detail-indicator-rows">${indicatorRowsHtml(t)}</span>
               <div class="detail-meta-row"><span>Source</span><strong>${esc(t.data_source || 'unknown')}</strong></div>
               <div class="detail-meta-row"><span>Coverage</span><strong>${esc(t.period_start || '—')} → ${esc(t.period_end || '—')}</strong></div>
               <div class="detail-meta-row"><span>Generated</span><strong>${data.generated_at ? new Date(data.generated_at).toLocaleString() : '—'}</strong></div>
@@ -2222,7 +2256,7 @@
     const shareMax = Math.max(0.01, ...[a.percent, o.percent, im.everything && im.everything.percent].filter(Boolean).flatMap(p => [p.before || 0, p.after || 0])) * 1.15;
     const row = (label, q, v, p, total) => `<tr><td>${esc(label)}</td>
       <td class="num">${esc(String(+q.before.toFixed(6)))} → ${esc(String(+q.after.toFixed(6)))}</td>
-      <td class="num">${money(v.before)} → ${money(v.after)} <span class="${v.after >= v.before ? 'ret-pos' : 'ret-neg'}">(${signed(v.after - v.before)})</span></td>
+      <td class="num">${money(v.before)} → ${money(v.after)} <span class="${v.after >= v.before ? 'ret-pos' : 'ret-neg'}">(${plusMinus(v.after - v.before)})</span></td>
       <td class="num">${pctText(p.before)} → ${pctText(p.after)}${p.before != null && p.after != null ? shareBar(p.before, p.after, null, {max: shareMax}) : ''}</td><td class="num">${money(total)}</td></tr>`;
     return `<table class="orders-table impact-table"><thead><tr><th>${esc(im.symbol)} position</th><th class="num">Shares</th><th class="num">Value</th><th class="num">Share of total</th><th class="num">Total</th></tr></thead><tbody>
       ${row(a.label || 'This account', a.quantity, a.value, a.percent, a.total)}
@@ -2404,8 +2438,10 @@
     overlayLive();
     renderGrid();
     if (detailRecord && livePrice(detailRecord) !== null) {
+      Object.assign(detailRecord, liveIndicators[detailRecord.ticker] || {});
       liveMark = {ticker: detailRecord.ticker, price: livePrice(detailRecord), day: new Date().toISOString().slice(0, 10)};
       paintDetailPrice();
+      paintDetailLiveCards();
       drawDetailChart();
     }
   }
@@ -2477,10 +2513,10 @@
     const box = document.getElementById('detail-dialog-price');
     if (!box || !detailRecord) return;
     if (!liveMark || liveMark.ticker !== detailRecord.ticker) {
-      box.textContent = fmtPrice(detailRecord.last_price);
+      box.textContent = fmtPrice(detailRecord.close_price ?? detailRecord.last_price);
       return;
     }
-    const close = detailRecord.last_price;
+    const close = detailRecord.close_price ?? detailRecord.last_price;
     box.textContent = `${fmtPrice(liveMark.price)} live`;
     box.title = close != null ? `Last close ${fmtPrice(close)} on ${lastCloseDay()}` : '';
     if (close != null && Number(close) > 0) {
