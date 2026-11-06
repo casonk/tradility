@@ -32,9 +32,10 @@
   tab); next are dollar-sized rungs (turned into whole shares or a coin's lot size), a take-profit sell
   placed above each filled buy rung, geometric rung spacing and sizing, and a way to cancel or replace a
   whole ladder in one step. Each needs its own limit and failure rules before it places anything.
-- [ ] [manual:2026-11-06] **Ladders from the Clockwork page** — the Order templates tab exists only in the
-  standalone application; the legacy `/to-tradility` page has no batch route. Do this as part of the
-  federation rather than copying the tab.
+- [ ] [manual:2026-11-06] **Options straddles (a call and a put)** — Tradility's order path handles stocks,
+  ETFs and coins only: no option chains, expiries, strikes or Schwab option legs, and the ticker format does not
+  accept an option symbol. A real options straddle needs a read-only chain view and a preview first, then its
+  own limits and failure rules. (The two-sided ladder, buys below and sells above the price, is done.)
 
 - [ ] [manual:2026-11-01] **Enable Binance.US trading** — the code is done (signed orders, tick/lot/minimum
   filters, `api_credentials.py --trade` in the finance repo) but there is no trade-enabled key yet. Create a key
@@ -91,6 +92,12 @@
 
 ## Done
 
+- [x] [manual:2026-11-06] **Order templates on the Clockwork page** — the same tab on `/to-tradility` (Clockwork
+  #176), sharing the saved templates with the standalone application.
+- [x] [manual:2026-11-06] **Two-sided ladders (straddles of orders)** — a template can hold buy rungs below and
+  sell rungs above the price: one preview, one phrase naming both sides (`BUY 3 SELL 3 AAPL`), both sides in
+  the per-order and daily limits, and the sell rungs checked against what the account holds before anything is
+  sent.
 - [x] [manual:2026-11-05] **Live prices for every ticker** — a top-bar Live control (off,
   5 s to 5 min) fetches one batch of Schwab and Binance.US prices; coin prices work
   with Binance trading off. (#53, #54)

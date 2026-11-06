@@ -289,9 +289,15 @@ the daily total, and sends nothing. You then type the phrase (for example `BUY 3
 needs it, even if the policy lets single orders go with a click). Everything is checked again against
 the current price before the first order, then the rungs go out in order and **stop at the first one
 that fails**: earlier rungs stay open, the rest are reported as not sent. `max_batch_orders` in the
-trading policy (default 10) caps the rungs. The order ticket in a ticker's detail view links to the
-tab with that ticker filled in. Ladders use Schwab accounts and Binance.US coins (not Fidelity, which
-has no order API); the Clockwork copy of the page does not have the tab.
+trading policy (default 10) caps the rungs. A ladder can also be **two-sided**
+(`buy + sell (straddle)`): buy rungs below the price and sell rungs above it in one template, one
+preview and one confirmation, with a phrase that names both sides (for example `BUY 3 SELL 3 AAPL`).
+Both sides count toward the per-order cap and the daily total, and the sell rungs of a ladder must fit
+in what the chosen account holds right now: an order to sell what you do not own can open a short, so
+the check is made here (at the preview and again before the first order), and sells are refused if the
+holding cannot be read. The order ticket in a ticker's detail view links to the tab with that ticker
+filled in. Ladders use Schwab accounts and Binance.US coins (not Fidelity, which
+has no order API).
 
 ## Crypto Tickers
 
