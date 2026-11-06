@@ -2,6 +2,21 @@
 
 ## Active
 
+- [ ] [manual:2026-11-05] **Fill the missing current-day Schwab bar** — Schwab posts a
+  day's daily candle after the 16:30 ET refresh, so 238 of 312 Schwab-sourced tickers
+  ended a session behind (Yahoo-sourced ones did not) and the chart skips that day
+  until the next run. Add a later refresh, or fill the last bar from Yahoo.
+- [ ] [manual:2026-11-05] **Refresh the holdings aggregate on a schedule** — the ticker
+  list comes from personal-finance's `holdings-aggregate.json`, rebuilt only by its
+  own job (last 2026-11-04 16:11 ET), so new positions and fills do not appear until
+  then.
+- [ ] [manual:2026-11-05] **Move fundamentals with the live price** — valuation ratios
+  (P/E, PEG, P/B) stay on the last report while price, RSI, VWAP and trend are live.
+- [ ] [manual:2026-11-05] **Offer an intraday VWAP** — VWAP 20 is a rolling daily-bar
+  proxy (typical price × volume), so it will not match a charting platform's session
+  VWAP; Schwab's API has no indicator endpoints, so this would be computed from
+  intraday bars.
+
 - [ ] [manual:2026-10-15] **Ask GitHub Support to purge pre-rewrite commits** — this
   repository's published history was rewritten (most recently on 2026-10-15,
   to remove per-commit AI attribution trailers). GitHub keeps serving the old
@@ -67,6 +82,20 @@
   `tradility-analysis.json`; retained temporarily as a migration fallback.
 
 ## Done
+
+- [x] [manual:2026-11-05] **Live prices for every ticker** — a top-bar Live control (off,
+  5 s to 5 min) fetches one batch of Schwab and Binance.US prices; coin prices work
+  with Binance trading off. (#53, #54)
+- [x] [manual:2026-11-05] **Live indicators** — RSI, VWAP, moving averages, trend and the
+  technical rating move with the live price from stored bars; the detail rating,
+  range and indicator cards follow too. (#55, #59)
+- [x] [manual:2026-11-05] **Fast orders refresh** — parallel broker requests and a
+  recent-days merge (about 12 s instead of 2.5 minutes), with a user timer. (#55)
+- [x] [manual:2026-11-05] **Never exchange the Schwab token per request** — one exchange
+  per 20 minutes per process, locked across processes, with a failure backoff; the
+  per-request exchange had got the refresh token revoked. (#57)
+- [x] [manual:2026-11-05] **Serve strict JSON** — bare NaN in the export broke Safari;
+  it is filled at the source and read as null by the servers. (#56)
 
 - [x] **Qualitative company profiles** — attach cached, sourced names,
   descriptions, sector/industry or fund metadata, headquarters, website,
