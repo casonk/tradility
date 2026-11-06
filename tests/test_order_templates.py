@@ -147,3 +147,15 @@ def test_the_page_has_the_templates_tab_the_builder_and_the_ladder_flow(web_clie
     # the confirmation is typed, and a failed ladder says what was and was not sent
     assert "Type <strong>${esc(p.phrase)}</strong> to confirm" in page
     assert "not sent" in page and "Stopped after" in page
+
+
+def test_the_tab_can_import_the_order_forms_one_click_templates(web_client):  # noqa: F811
+    client, _ = web_client
+    page = client.get("/").get_data(as_text=True)
+    for hook in (
+        "function importPolicyTemplates",
+        "const tplPolicyMissing",
+        'id="tpl-import"',
+        "tradeStatus.templates",
+    ):
+        assert hook in page, hook

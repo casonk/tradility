@@ -567,6 +567,7 @@
       <h2>Saved templates</h2>
       <div id="tpl-saved"><div class="tpl-hint">Loading…</div></div>
       <button type="button" class="tpl-btn primary" id="tpl-new">+ New template</button>
+      <div id="tpl-import"></div>
     </aside>
     <div>
       <div class="tpl-card tpl-form" id="tpl-builder"></div>
@@ -3150,6 +3151,7 @@
     renderRun();
     await Promise.all([loadTemplates(), tradeStatus ? Promise.resolve() : loadTradeStatus()]);
     renderRun();
+    renderImport();
   }
 
   async function openLadder(ticker) {
@@ -3170,7 +3172,40 @@
 
   function rungText(r) { return `${Number(r.quantity)}×${Math.abs(Number(r.offset_pct))}%`; }
 
+  // The order form's one-click shapes come from the trading policy (or the built-in set). They can be
+  // imported as one-rung templates (quantity 1, to edit), so every template lives in one place.
+  const tplPolicyMissing = () => {
+    const have = new Set(tplList.map(t => t.name.toLowerCase()));
+    return ((tradeStatus && tradeStatus.templates) || []).filter(t => !have.has(String(t.name).toLowerCase()));
+  };
+
+  function renderImport() {
+    const box = document.getElementById('tpl-import');
+    if (!box) return;
+    const missing = tplPolicyMissing();
+    box.innerHTML = missing.length ? `<p class="tpl-hint">The order form has ${missing.length} one-click template${missing.length === 1 ? '' : 's'} that are not saved here yet.</p>
+      <button type="button" class="tpl-btn" id="tpl-import-go">Import ${missing.length} order-form template${missing.length === 1 ? '' : 's'}</button>
+      <div class="order-error" id="tpl-import-error" role="alert"></div>` : '';
+    const go = document.getElementById('tpl-import-go');
+    if (go) go.addEventListener('click', importPolicyTemplates);
+  }
+
+  async function importPolicyTemplates() {
+    const defaults = (tradeStatus && tradeStatus.defaults) || {};
+    const error = document.getElementById('tpl-import-error');
+    try {
+      for (const t of tplPolicyMissing()) {
+        await sendOrder('POST', '/api/tradility-templates', {
+          name: t.name, side: t.side, tif: t.tif || defaults.time_in_force || 'gtc', session: t.session || defaults.session || 'normal',
+          rungs: [{quantity: 1, offset_pct: Number(t.offset_pct)}],
+        });
+      }
+    } catch (err) { if (error) error.textContent = err.message; }
+    await loadTemplates();
+  }
+
   function renderSaved() {
+    renderImport();
     const box = document.getElementById('tpl-saved');
     box.innerHTML = tplList.length ? tplList.map(t => `<button type="button" class="tpl-item ${tplDraft && tplDraft.id === t.id ? 'active' : ''}" data-open="${esc(t.id)}">
         <strong>${esc(t.name)}</strong><span class="tpl-badge ${esc(t.side)}">${esc(t.side)}</span>
