@@ -455,9 +455,11 @@
     body.view-templates .controls, body.view-templates .legend, body.view-templates .accounts-panel,
     body.view-templates .stats-bar, body.view-templates main { display: none; }
     .tpl-layout { display: grid; grid-template-columns: minmax(300px, 520px) minmax(0, 1fr); gap: 16px; align-items: start; }
-    #tpl-saved { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 6px; align-items: stretch; }
+    .tpl-group { margin-bottom: 8px; }
+    .tpl-group > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted-fg); padding: 6px 2px; list-style-position: inside; user-select: none; }
+    .tpl-group > summary .tpl-count { font-weight: 400; margin-left: 4px; }
+    .tpl-group-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 6px; align-items: stretch; margin-top: 4px; }
     #tpl-saved .tpl-item { overflow-wrap: anywhere; }
-    #tpl-saved .tpl-hint { grid-column: 1 / -1; }
     @media (max-width: 1100px) { .tpl-layout { grid-template-columns: minmax(0, 1fr); } }
     @media (max-width: 800px) { .tpl-layout { grid-template-columns: 1fr; } }
     .tpl-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
@@ -3218,13 +3220,33 @@
     await loadTemplates();
   }
 
+  const TPL_GROUPS = [
+    {key: 'single-buy', label: 'Single buys'}, {key: 'single-sell', label: 'Single sells'},
+    {key: 'ladder-buy', label: 'Buy ladders'}, {key: 'ladder-sell', label: 'Sell ladders'},
+    {key: 'straddle', label: 'Straddles'}];
+  const tplGroupOf = t => t.side === 'both' ? 'straddle' : `${t.rungs.length > 1 ? 'ladder' : 'single'}-${t.side}`;
+  function tplClosedGroups() {
+    try { return new Set(JSON.parse(localStorage.getItem('tradility.tplClosed') || '[]')); } catch (err) { return new Set(); }
+  }
+
   function renderSaved() {
     renderImport();
     const box = document.getElementById('tpl-saved');
-    box.innerHTML = tplList.length ? tplList.map(t => `<button type="button" class="tpl-item ${tplDraft && tplDraft.id === t.id ? 'active' : ''}" data-open="${esc(t.id)}">
+    const item = t => `<button type="button" class="tpl-item ${tplDraft && tplDraft.id === t.id ? 'active' : ''}" data-open="${esc(t.id)}">
         <strong>${esc(t.name)}</strong><span class="tpl-badge ${esc(t.side)}">${t.side === 'both' ? 'buy + sell' : esc(t.side)}</span>
-        <small>${esc(rungsText(t))}</small></button>`).join('')
+        <small>${esc(rungsText(t))}</small></button>`;
+    // one collapsible pane per strategy; the open/closed choice is remembered in this browser
+    const groups = TPL_GROUPS.map(g => ({...g, items: tplList.filter(t => tplGroupOf(t) === g.key)})).filter(g => g.items.length);
+    const closed = tplClosedGroups();
+    box.innerHTML = tplList.length ? groups.map(g => `<details class="tpl-group" data-group="${g.key}" ${closed.has(g.key) && !g.items.some(t => tplDraft && tplDraft.id === t.id) ? '' : 'open'}>
+        <summary>${esc(g.label)}<span class="tpl-count">(${g.items.length})</span></summary>
+        <div class="tpl-group-body">${g.items.map(item).join('')}</div></details>`).join('')
       : '<div class="tpl-hint">No templates yet. Build one on the right and save it.</div>';
+    box.querySelectorAll('details.tpl-group').forEach(d => d.addEventListener('toggle', () => {
+      const set = tplClosedGroups();
+      if (d.open) set.delete(d.dataset.group); else set.add(d.dataset.group);
+      try { localStorage.setItem('tradility.tplClosed', JSON.stringify([...set])); } catch (err) { /* private mode: not remembered */ }
+    }));
     box.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => {
       const t = tplList.find(x => x.id === b.dataset.open);
       if (t) { tplDraft = JSON.parse(JSON.stringify(t)); tplPreview = null; renderBuilder(); renderRun(); renderSaved(); }
