@@ -273,6 +273,26 @@ access token lasts 30), a lock serializes processes, and a failure is not retrie
 credential is revoked (HTTP 400 "invalid, expired or revoked"), re-authorize it in the portfolio's
 Schwab OAuth flow; Tradility only reports "Schwab token command failed".
 
+## Order templates (ladders)
+
+The **Order templates** tab builds ladders: several limit orders on one ticker, such as buy 1 at 1% below
+the price, 2 at 2% below and 3 at 3% below. A template is a side, hours, duration and a list of rungs
+(a quantity and how far from the live price); the generator fills the rungs from a count, a first and
+step percentage and a first quantity and step. Templates are saved in `~/.local/state/tradility/
+order-templates.json` (owner-only, override with `TRADILITY_ORDER_TEMPLATES_FILE`) and are only data:
+placing one always goes through the trader service and the trading policy.
+
+Placing a ladder is one preview and one confirmation. **Preview ladder** expands the rungs from the
+live price (a buy rung at or below it, a sell rung at or above it, rounded to the broker's tick),
+checks every rung against the per-order cap, the price band and the broker, checks the whole against
+the daily total, and sends nothing. You then type the phrase (for example `BUY 3 AAPL`; a ladder always
+needs it, even if the policy lets single orders go with a click). Everything is checked again against
+the current price before the first order, then the rungs go out in order and **stop at the first one
+that fails**: earlier rungs stay open, the rest are reported as not sent. `max_batch_orders` in the
+trading policy (default 10) caps the rungs. The order ticket in a ticker's detail view links to the
+tab with that ticker filled in. Ladders use Schwab accounts and Binance.US coins (not Fidelity, which
+has no order API); the Clockwork copy of the page does not have the tab.
+
 ## Crypto Tickers
 
 Crypto from Binance uses plain symbols (`BTC`, `ETH`). When loaded from a holdings file these are automatically converted to Yahoo Finance format (`BTC-USD`, `ETH-USD`) for fetching, then restored to the original symbol in the output.

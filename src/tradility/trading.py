@@ -1260,7 +1260,7 @@ class Trader:
             "batch": True,
             "preview_id": token,
             "expires_in": PREVIEW_TTL_SECONDS,
-            "confirmation": self.policy.confirmation,
+            "confirmation": "phrase",
             "phrase": batch.phrase,
             "broker": probe.broker,
             "ticker": batch.ticker,
@@ -1304,7 +1304,9 @@ class Trader:
         batch = entry[0]
         if not isinstance(batch, Batch):
             raise TradingError("that preview is not a ladder")
-        if self.policy.confirmation == "phrase" and str(phrase).strip() != batch.phrase:
+        # A ladder sends several real orders at once, so, like a cancel or a withdrawal, it always
+        # needs its typed phrase, whatever the policy's confirmation setting is for single orders.
+        if str(phrase).strip() != batch.phrase:
             self.audit.write("rejected", reason="phrase", batch=batch.phrase)
             raise TradingError(f'type exactly "{batch.phrase}" to confirm')
         broker = self._broker(batch.orders[0])

@@ -442,6 +442,39 @@
       background: var(--surface); padding: 16px;
       font-size: 13px; margin-bottom: 12px; color: var(--red);
     }
+
+    /* ── Order templates tab ── */
+    .view-tabs { display: flex; gap: 4px; padding: 8px 20px 0; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .view-tabs button { background: none; border: 1px solid transparent; border-bottom: none; color: var(--muted-fg); padding: 7px 14px; border-radius: 8px 8px 0 0; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .view-tabs button[aria-selected="true"] { color: var(--text); background: var(--bg); border-color: var(--border); margin-bottom: -1px; }
+    #templates-view { display: none; padding: 16px 20px 48px; }
+    body.view-templates #templates-view { display: block; }
+    body.view-templates .controls, body.view-templates .legend, body.view-templates .accounts-panel,
+    body.view-templates .stats-bar, body.view-templates main { display: none; }
+    .tpl-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 16px; align-items: start; }
+    @media (max-width: 800px) { .tpl-layout { grid-template-columns: 1fr; } }
+    .tpl-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+    .tpl-card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-fg); margin: 0 0 10px; }
+    .tpl-item { display: block; width: 100%; text-align: left; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; font: inherit; font-size: 12px; }
+    .tpl-item:hover, .tpl-item.active { border-color: var(--accent); }
+    .tpl-item small { display: block; color: var(--muted-fg); margin-top: 2px; }
+    .tpl-badge { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 99px; border: 1px solid var(--border); margin-left: 6px; }
+    .tpl-badge.buy { color: var(--green); border-color: var(--green); }
+    .tpl-badge.sell { color: var(--red); border-color: var(--red); }
+    .tpl-form input, .tpl-form select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 7px; font-size: 12px; }
+    .tpl-form input[type=number] { width: 78px; }
+    .tpl-form button, .tpl-card button.tpl-btn { border: 1px solid var(--border); background: var(--surface2); color: var(--text); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+    .tpl-form button.primary, .tpl-card button.primary { border-color: var(--accent); color: var(--accent); }
+    .tpl-form button.danger { border-color: var(--red); color: var(--red); }
+    .tpl-gen { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; padding: 8px 10px; border: 1px dashed var(--border); border-radius: 8px; font-size: 12px; color: var(--muted-fg); }
+    .tpl-rungs { width: 100%; max-width: 460px; }
+    .tpl-rungs td, .tpl-rungs th { padding: 3px 6px; }
+    .tpl-row { margin-bottom: 8px; }
+    .tpl-total td { border-top: 2px solid var(--border); font-weight: 700; }
+    .tpl-result-ok { color: var(--green); font-weight: 700; }
+    .tpl-result-bad { color: var(--red); font-weight: 700; }
+    .tpl-hint { color: var(--muted-fg); font-size: 11px; margin: 6px 0; }
+    .tpl-card p { font-size: 12px; margin: 8px 0; }
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
 </head>
@@ -451,6 +484,11 @@
   <span class="header-sub">Standalone web application</span>
   <span class="header-meta" id="meta-generated"></span>
 </header>
+
+<nav class="view-tabs" role="tablist" aria-label="Views">
+  <button type="button" role="tab" id="tab-signals" aria-selected="true" aria-controls="grid-container" onclick="showView('signals')">Signals</button>
+  <button type="button" role="tab" id="tab-templates" aria-selected="false" aria-controls="templates-view" tabindex="-1" onclick="showView('templates')">Order templates</button>
+</nav>
 
 <div class="controls">
   <span class="controls-label" title="Select one or more. Several are combined into one joint buy probability.">Indicators</span>
@@ -522,6 +560,20 @@
 <main>
   <div id="grid-container"><div class="state-msg">Loading…</div></div>
 </main>
+
+<section id="templates-view" role="tabpanel" aria-labelledby="tab-templates">
+  <div class="tpl-layout">
+    <aside class="tpl-card">
+      <h2>Saved templates</h2>
+      <div id="tpl-saved"><div class="tpl-hint">Loading…</div></div>
+      <button type="button" class="tpl-btn primary" id="tpl-new">+ New template</button>
+    </aside>
+    <div>
+      <div class="tpl-card tpl-form" id="tpl-builder"></div>
+      <div class="tpl-card tpl-form" id="tpl-run"></div>
+    </div>
+  </div>
+</section>
 
 <div class="detail-overlay" id="detail-overlay" hidden
      role="dialog" aria-modal="true" aria-labelledby="detail-dialog-title">
@@ -2194,6 +2246,7 @@
         <button type="submit" class="primary" id="trade-submit">Preview</button>
       </form>
       <div class="template-chips" id="trade-templates" aria-label="Order templates"></div>
+      ${IS_POPOUT ? '' : `<div class="orders-sync"><a href="#templates" class="company-link" onclick="openLadder('${esc(detailTicker)}'); return false;">Build a ladder for ${esc(detailTicker)} →</a></div>`}
       <div class="orders-sync" id="trade-default"></div>
       <div class="orders-sync" id="trade-funds"></div>
       <div id="trade-confirm">${tradeStep ? confirmPanel() : ''}</div>
@@ -3063,8 +3116,277 @@
     }
   });
 
+  // ── Order templates: ladders ────────────────────────────────────────────────
+  // A template is a side, hours, duration and rungs (a quantity and how far from the live price).
+  // It is only data. Placing one asks the trader service, which expands it from its own live
+  // price, checks every rung and the total against the trading policy, and sends nothing until
+  // the typed phrase is given.
+  let tplList = [], tplDraft = null, tplPreview = null, tplReady = null;
+  const TPL_TIFS = [['gtc', 'GTC'], ['day', 'Day']];
+  const TPL_SESSIONS = [['normal', 'Regular hours'], ['extended', 'Extended hours']];
+  const tplBlank = () => ({id: '', name: '', side: 'buy', tif: 'gtc', session: 'normal',
+    rungs: [{quantity: 1, offset_pct: -1}, {quantity: 2, offset_pct: -2}, {quantity: 3, offset_pct: -3}]});
+  const tplSign = side => (side === 'sell' ? 1 : -1);
+  const tplOptions = (choices, value) => choices.map(([v, label]) =>
+    `<option value="${v}" ${v === value ? 'selected' : ''}>${label}</option>`).join('');
+  const tplIsCoin = ticker => /-USD$/.test(ticker);
+
+  function showView(view) {
+    const templates = view === 'templates';
+    document.body.classList.toggle('view-templates', templates);
+    for (const [id, on] of [['tab-signals', !templates], ['tab-templates', templates]]) {
+      const tab = document.getElementById(id);
+      tab.setAttribute('aria-selected', String(on));
+      tab.tabIndex = on ? 0 : -1;
+    }
+    try { history.replaceState(null, '', templates ? '#templates' : location.pathname + location.search); } catch (e) {}
+    if (templates) tplReady = tplReady || initTemplates();
+    return tplReady;
+  }
+
+  async function initTemplates() {
+    tplDraft = tplDraft || tplBlank();
+    renderBuilder();
+    renderRun();
+    await Promise.all([loadTemplates(), tradeStatus ? Promise.resolve() : loadTradeStatus()]);
+    renderRun();
+  }
+
+  async function openLadder(ticker) {
+    if (typeof closeTickerDetail === 'function') closeTickerDetail();
+    await showView('templates');
+    const input = document.getElementById('run-ticker');
+    if (input) { input.value = ticker; syncRunAccount(); input.focus(); }
+  }
+
+  async function loadTemplates() {
+    try {
+      const res = await fetch('/api/tradility-templates', {cache: 'no-store'});
+      const data = await res.json();
+      tplList = (res.ok && data.ok) ? data.templates : [];
+    } catch (err) { tplList = []; }
+    renderSaved();
+  }
+
+  function rungText(r) { return `${Number(r.quantity)}×${Math.abs(Number(r.offset_pct))}%`; }
+
+  function renderSaved() {
+    const box = document.getElementById('tpl-saved');
+    box.innerHTML = tplList.length ? tplList.map(t => `<button type="button" class="tpl-item ${tplDraft && tplDraft.id === t.id ? 'active' : ''}" data-open="${esc(t.id)}">
+        <strong>${esc(t.name)}</strong><span class="tpl-badge ${esc(t.side)}">${esc(t.side)}</span>
+        <small>${esc(t.rungs.map(rungText).join(', '))}</small></button>`).join('')
+      : '<div class="tpl-hint">No templates yet. Build one on the right and save it.</div>';
+    box.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => {
+      const t = tplList.find(x => x.id === b.dataset.open);
+      if (t) { tplDraft = JSON.parse(JSON.stringify(t)); tplPreview = null; renderBuilder(); renderRun(); renderSaved(); }
+    }));
+  }
+
+  function renderBuilder() {
+    const d = tplDraft, box = document.getElementById('tpl-builder');
+    const word = d.side === 'buy' ? 'below' : 'above';
+    box.innerHTML = `<h2>${d.id ? 'Edit template' : 'New template'}</h2>
+      <div class="order-form tpl-row">
+        <input id="tpl-name" placeholder="Name, e.g. Dip ladder" maxlength="40" value="${esc(d.name)}" aria-label="Template name">
+        <select id="tpl-side" aria-label="Side"><option value="buy" ${d.side === 'buy' ? 'selected' : ''}>buy</option><option value="sell" ${d.side === 'sell' ? 'selected' : ''}>sell</option></select>
+        <select id="tpl-session" aria-label="Trading hours">${tplOptions(TPL_SESSIONS, d.session)}</select>
+        <select id="tpl-tif" aria-label="Duration">${tplOptions(TPL_TIFS, d.tif)}</select>
+      </div>
+      <div class="tpl-gen">Generate
+        <input id="gen-count" type="number" min="1" max="20" value="3" aria-label="Rungs"> rungs, first
+        <input id="gen-first" type="number" step="any" min="0" value="1" aria-label="First percent"> % ${word}, every
+        <input id="gen-step" type="number" step="any" min="0" value="1" aria-label="Step percent"> %, first quantity
+        <input id="gen-qty" type="number" step="any" min="0" value="1" aria-label="First quantity">, then +
+        <input id="gen-qstep" type="number" step="any" min="0" value="1" aria-label="Quantity step"> each
+        <button type="button" id="gen-go">Generate rungs</button></div>
+      <table class="orders-table tpl-rungs"><thead><tr><th>#</th><th>Quantity</th><th>% ${word} the price</th><th></th></tr></thead><tbody>
+        ${d.rungs.map((r, i) => `<tr><td>${i + 1}</td>
+          <td><input type="number" step="any" min="0" data-rung="${i}" data-field="quantity" value="${esc(String(r.quantity))}" aria-label="Rung ${i + 1} quantity"></td>
+          <td><input type="number" step="any" min="0" data-rung="${i}" data-field="pct" value="${esc(String(Math.abs(r.offset_pct)))}" aria-label="Rung ${i + 1} percent ${word}"></td>
+          <td><button type="button" data-del="${i}" aria-label="Remove rung ${i + 1}">×</button></td></tr>`).join('')}
+      </tbody></table>
+      <p><button type="button" id="tpl-add">+ Add rung</button></p>
+      <div class="orders-sync" id="tpl-summary"></div>
+      <p><button type="button" class="primary" id="tpl-save">${d.id ? 'Save changes' : 'Save template'}</button>
+        ${d.id ? '<button type="button" class="danger" id="tpl-delete">Delete</button>' : ''}</p>
+      <div class="order-error" id="tpl-error" role="alert"></div>`;
+    bindBuilder();
+    updateSummary();
+  }
+
+  function updateSummary() {
+    const d = tplDraft, el = document.getElementById('tpl-summary');
+    if (!el) return;
+    const qty = d.rungs.reduce((a, r) => a + (Number(r.quantity) || 0), 0);
+    const deepest = Math.max(0, ...d.rungs.map(r => Math.abs(Number(r.offset_pct)) || 0));
+    el.textContent = `${d.rungs.length} rung${d.rungs.length === 1 ? '' : 's'} · ${qty} in total · deepest ${deepest}% ${d.side === 'buy' ? 'below' : 'above'} the price`;
+  }
+
+  function bindBuilder() {
+    const d = tplDraft, box = document.getElementById('tpl-builder');
+    const $ = id => document.getElementById(id);
+    $('tpl-name').addEventListener('input', e => { d.name = e.target.value; });
+    $('tpl-session').addEventListener('change', e => { d.session = e.target.value; });
+    $('tpl-tif').addEventListener('change', e => { d.tif = e.target.value; });
+    $('tpl-side').addEventListener('change', e => {
+      d.side = e.target.value;
+      d.rungs.forEach(r => { r.offset_pct = tplSign(d.side) * Math.abs(Number(r.offset_pct) || 0); });
+      tplPreview = null; renderBuilder(); renderRun();
+    });
+    box.querySelectorAll('[data-rung]').forEach(input => input.addEventListener('input', () => {
+      const r = d.rungs[Number(input.dataset.rung)], v = Number(input.value);
+      if (input.dataset.field === 'quantity') r.quantity = v; else r.offset_pct = tplSign(d.side) * Math.abs(v);
+      updateSummary();
+    }));
+    box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+      d.rungs.splice(Number(b.dataset.del), 1); renderBuilder();
+    }));
+    $('tpl-add').addEventListener('click', () => {
+      const last = d.rungs[d.rungs.length - 1] || {quantity: 1, offset_pct: 0};
+      d.rungs.push({quantity: last.quantity, offset_pct: tplSign(d.side) * (Math.abs(last.offset_pct) + 1)});
+      renderBuilder();
+    });
+    $('gen-go').addEventListener('click', () => {
+      const n = Math.max(1, Math.min(20, Math.floor(Number($('gen-count').value) || 1)));
+      const first = Number($('gen-first').value) || 0, step = Number($('gen-step').value) || 0;
+      const qty = Number($('gen-qty').value) || 0, qstep = Number($('gen-qstep').value) || 0;
+      const round = x => Math.round(x * 1e6) / 1e6;
+      d.rungs = Array.from({length: n}, (_, i) => ({quantity: round(qty + qstep * i), offset_pct: tplSign(d.side) * round(first + step * i)}));
+      renderBuilder();
+    });
+    $('tpl-save').addEventListener('click', saveTemplate);
+    if ($('tpl-delete')) $('tpl-delete').addEventListener('click', deleteTemplate);
+  }
+
+  function builderError(message) { const el = document.getElementById('tpl-error'); if (el) el.textContent = message || ''; }
+
+  async function saveTemplate() {
+    const d = tplDraft;
+    builderError('');
+    try {
+      const body = {name: d.name, side: d.side, tif: d.tif, session: d.session, rungs: d.rungs};
+      const data = await sendOrder(d.id ? 'PUT' : 'POST', d.id ? `/api/tradility-templates/${encodeURIComponent(d.id)}` : '/api/tradility-templates', body);
+      tplDraft = JSON.parse(JSON.stringify(data.template));
+      await loadTemplates();
+      renderBuilder();
+    } catch (err) { builderError(err.message); }
+  }
+
+  async function deleteTemplate() {
+    const d = tplDraft;
+    if (!d.id || !window.confirm(`Delete the template "${d.name}"?`)) return;
+    try {
+      await sendOrder('DELETE', `/api/tradility-templates/${encodeURIComponent(d.id)}`);
+      tplDraft = tplBlank(); tplPreview = null;
+      await loadTemplates(); renderBuilder(); renderRun();
+    } catch (err) { builderError(err.message); }
+  }
+
+  function renderRun() {
+    const box = document.getElementById('tpl-run');
+    const d = tplDraft, current = document.getElementById('run-ticker');
+    const typed = current ? current.value : '';
+    const accounts = (tradeStatus && tradeStatus.schwab_accounts) || [];
+    let status = '';
+    if (!tradeStatus) status = '<div class="tpl-hint">Checking the trading service…</div>';
+    else if (!tradeStatus.available) status = '<div class="order-error">The trading service is not running, so a ladder cannot be previewed.</div>';
+    else if (!tradeStatus.enabled) status = '<div class="order-error">Trading is turned off in the policy.</div>';
+    box.innerHTML = `<h2>Place this ladder</h2>${status}
+      <form class="order-form" id="tpl-run-form" autocomplete="off">
+        <input id="run-ticker" list="run-ticker-list" placeholder="Ticker, e.g. AAPL" value="${esc(typed)}" required aria-label="Ticker">
+        <datalist id="run-ticker-list">${allTickers.map(t => `<option value="${esc(t.ticker)}">`).join('')}</datalist>
+        <select id="run-account" aria-label="Schwab account"><option value="">Account…</option>${accounts.map(a => `<option value="${esc(a)}">…${esc(a)}</option>`).join('')}</select>
+        <button type="submit" class="primary" ${tradeStatus && tradeStatus.available && tradeStatus.enabled ? '' : 'disabled'}>Preview ladder</button>
+      </form>
+      <div class="tpl-hint">${d ? `${esc(d.name || 'This template')} · ${d.rungs.length} rung${d.rungs.length === 1 ? '' : 's'}. ` : ''}Prices come from the live price when you preview; nothing is sent until you type the confirmation phrase.</div>
+      <div class="order-error" id="run-error" role="alert"></div>
+      <div id="tpl-preview"></div>`;
+    document.getElementById('tpl-run-form').addEventListener('submit', e => { e.preventDefault(); previewLadder(); });
+    document.getElementById('run-ticker').addEventListener('input', syncRunAccount);
+    syncRunAccount();
+    if (tplPreview) renderPreview();
+  }
+
+  function syncRunAccount() {
+    const t = document.getElementById('run-ticker'), a = document.getElementById('run-account');
+    if (t && a) a.hidden = tplIsCoin(t.value.trim().toUpperCase());
+  }
+
+  function runError(message) { const el = document.getElementById('run-error'); if (el) el.textContent = message || ''; }
+
+  async function previewLadder() {
+    runError(''); tplPreview = null;
+    document.getElementById('tpl-preview').innerHTML = '';
+    const d = tplDraft, ticker = document.getElementById('run-ticker').value.trim().toUpperCase();
+    const account = document.getElementById('run-account').value;
+    if (!ticker) { runError('Enter a ticker.'); return; }
+    if (!tplIsCoin(ticker) && !account) { runError('Choose the Schwab account.'); return; }
+    const body = {ticker, side: d.side, rungs: d.rungs.map(r => ({quantity: Number(r.quantity), offset_pct: Number(r.offset_pct)}))};
+    if (!tplIsCoin(ticker)) Object.assign(body, {account, tif: d.tif, session: d.session});
+    try {
+      tplPreview = await sendOrder('POST', '/api/tradility-trade/batch/preview', body);
+      renderPreview();
+    } catch (err) { runError(err.message); }
+  }
+
+  function renderPreview() {
+    const p = tplPreview, box = document.getElementById('tpl-preview');
+    if (!p || !box) return;
+    const word = p.side === 'buy' ? 'below' : 'above';
+    box.innerHTML = `<table class="orders-table"><thead><tr><th>#</th><th class="num">Qty</th><th class="num">Limit</th><th class="num">% ${word}</th><th class="num">Cost</th><th></th></tr></thead><tbody>
+      ${p.orders.map((o, i) => `<tr><td>${i + 1}</td><td class="num">${esc(String(o.quantity))}</td><td class="num">${fmtPrice(o.price)}</td>
+        <td class="num">${Math.abs(o.offset_pct)}%</td><td class="num">${money(o.notional)}</td>
+        <td>${(o.warnings || []).map(w => `<span class="trade-warn">${esc(w)}</span>`).join(' ')}</td></tr>`).join('')}
+      <tr class="tpl-total"><td colspan="4">${p.count} ${esc(p.side)} orders on ${esc(p.ticker)} at a live price of ${fmtPrice(p.last_price)}</td><td class="num">${money(p.total_notional)}</td><td></td></tr>
+      </tbody></table>
+      <div class="orders-sync">Limits: ${money(p.limits.per_order_usd)} per order · ${money(p.limits.spent_today)} sent today of ${money(p.limits.daily_usd)} · ${money(p.limits.remaining_today)} left after this ladder.</div>
+      ${(p.warnings || []).map(w => `<div class="trade-warn">${esc(w)}</div>`).join('')}
+      <p>Type <strong>${esc(p.phrase)}</strong> to confirm. This sends ${p.count} real orders, and stops at the first one that fails.</p>
+      <div class="order-form"><input type="text" id="run-phrase" autocomplete="off" aria-label="Confirmation phrase" style="max-width:200px">
+        <button type="button" class="primary" id="run-go">Place ${p.count} orders</button>
+        <button type="button" id="run-discard">Discard</button></div>`;
+    document.getElementById('run-discard').addEventListener('click', () => { tplPreview = null; box.innerHTML = ''; runError(''); });
+    document.getElementById('run-go').addEventListener('click', confirmLadder);
+    document.getElementById('run-phrase').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); confirmLadder(); } });
+  }
+
+  async function confirmLadder() {
+    const p = tplPreview;
+    if (!p) return;
+    runError('');
+    const phrase = document.getElementById('run-phrase').value;
+    document.getElementById('run-go').disabled = true;
+    try {
+      const done = await sendOrder('POST', '/api/tradility-trade/batch/confirm', {preview_id: p.preview_id, phrase});
+      tplPreview = null;
+      renderResults(done, p);
+    } catch (err) {
+      // a refused confirmation uses the preview up, so the ladder has to be previewed again
+      tplPreview = null;
+      document.getElementById('tpl-preview').innerHTML = '';
+      runError(`${err.message} Preview the ladder again to retry.`);
+    }
+  }
+
+  function renderResults(done, p) {
+    const icon = {placed: '✓ placed', failed: '✗ failed', skipped: '– not sent'};
+    document.getElementById('tpl-preview').innerHTML = `
+      <div class="${done.placed ? 'tpl-result-ok' : 'tpl-result-bad'}">${done.placed
+        ? `All ${done.count} orders placed on ${esc(p.ticker)}.`
+        : `Stopped after ${done.placed_count} of ${done.count} orders. The ones placed are still open; the rest were not sent.`}</div>
+      <table class="orders-table"><thead><tr><th>#</th><th class="num">Qty</th><th class="num">Limit</th><th>Result</th></tr></thead><tbody>
+      ${done.results.map(r => `<tr><td>${r.index}</td><td class="num">${esc(String(r.order.quantity))}</td><td class="num">${fmtPrice(r.order.price)}</td>
+        <td class="${r.status === 'placed' ? 'tpl-result-ok' : r.status === 'failed' ? 'tpl-result-bad' : ''}">${icon[r.status] || esc(r.status)}${r.error ? ' — ' + esc(r.error) : ''}${r.broker_order_id ? ' (' + esc(String(r.broker_order_id)) + ')' : ''}</td></tr>`).join('')}
+      </tbody></table>`;
+  }
+
+  document.getElementById('tpl-new').addEventListener('click', () => {
+    tplDraft = tplBlank(); tplPreview = null; renderBuilder(); renderRun(); renderSaved();
+  });
+
   loadData().then(() => {
     startLive();
+    if (location.hash === '#templates') showView('templates');
     const requestedRange = new URLSearchParams(window.location.search).get('range');
     if (IS_POPOUT && RANGES.includes(requestedRange)) detailRange = requestedRange;
     const requestedTicker = new URLSearchParams(window.location.search).get('ticker');

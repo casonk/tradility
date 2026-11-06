@@ -28,6 +28,14 @@
 
 ## Trading
 
+- [ ] [manual:2026-11-06] **More elaborate order strategies** — ladders ship first (the Order templates
+  tab); next are dollar-sized rungs (turned into whole shares or a coin's lot size), a take-profit sell
+  placed above each filled buy rung, geometric rung spacing and sizing, and a way to cancel or replace a
+  whole ladder in one step. Each needs its own limit and failure rules before it places anything.
+- [ ] [manual:2026-11-06] **Ladders from the Clockwork page** — the Order templates tab exists only in the
+  standalone application; the legacy `/to-tradility` page has no batch route. Do this as part of the
+  federation rather than copying the tab.
+
 - [ ] [manual:2026-11-01] **Enable Binance.US trading** — the code is done (signed orders, tick/lot/minimum
   filters, `api_credentials.py --trade` in the finance repo) but there is no trade-enabled key yet. Create a key
   with trading on and withdrawals off in its own KeePass entry, add `institutions.bin.trade_credentials` to the

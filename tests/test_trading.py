@@ -1092,3 +1092,17 @@ def test_max_batch_orders_is_read_from_the_policy_file(tmp_path):
     path.write_text("enabled = true\nmax_batch_orders = 0\n")
     with pytest.raises(t.TradingError, match="between 1 and 50"):
         t.load_policy(path)
+
+
+def test_a_ladder_always_needs_its_typed_phrase_even_when_single_orders_need_only_a_click(rig):
+    trader, send, *_ = rig
+    trader.policy = dataclasses.replace(trader.policy, confirmation="button")
+    single = trader.preview(order())
+    assert single["confirmation"] == "button"  # a single order is a click under this policy
+    pv = trader.preview_batch(ladder())
+    assert pv["confirmation"] == "phrase" and pv["phrase"] == "BUY 3 AAPL"
+    with pytest.raises(t.TradingError, match='type exactly "BUY 3 AAPL"'):
+        trader.confirm_batch(pv["preview_id"], "")  # a click with no phrase places nothing
+    assert not placements(send)
+    pv = trader.preview_batch(ladder())
+    assert trader.confirm_batch(pv["preview_id"], "BUY 3 AAPL")["placed_count"] == 3
