@@ -25,7 +25,7 @@ from typing import Any
 
 from flask import Flask, abort, jsonify, render_template, request, session
 
-from tradility import web_state
+from tradility import order_templates, web_state
 from tradility.live import live_indicators
 from tradility.live import today_dates as live_today
 
@@ -155,6 +155,9 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         HOLDINGS_FILE=_path("TRADILITY_HOLDINGS_FILE", "holdings-aggregate.json"),
         MANUAL_ORDERS_FILE=_path(
             "TRADILITY_MANUAL_ORDERS_FILE", str(_state_dir() / "manual-orders.json")
+        ),
+        ORDER_TEMPLATES_FILE=_path(
+            "TRADILITY_ORDER_TEMPLATES_FILE", str(_state_dir() / "order-templates.json")
         ),
         TRADER_URL=os.environ.get("TRADILITY_TRADER_URL", "http://127.0.0.1:8768").rstrip("/"),
         REFRESH_COMMAND=os.environ.get("TRADILITY_REFRESH_COMMAND", "").strip(),
@@ -435,6 +438,53 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
             return jsonify({"ok": False, "error": "send a JSON object"}), 400
         code, payload = _trader_call(app, "POST", f"/withdraw/{step}", body)
         return jsonify(payload), code
+
+    @app.get("/api/tradility-templates")
+    def templates_list():
+        return jsonify(
+            {"ok": True, "templates": order_templates.load(app.config["ORDER_TEMPLATES_FILE"])}
+        )
+
+    @app.post("/api/tradility-templates")
+    def templates_add():
+        path = app.config["ORDER_TEMPLATES_FILE"]
+        try:
+            with order_templates.LOCK:
+                templates = order_templates.load(path)
+                template = order_templates.add(templates, request.get_json(silent=True))
+                order_templates.save(path, templates)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": True, "template": template}), 201
+
+    @app.put("/api/tradility-templates/<template_id>")
+    def templates_update(template_id: str):
+        path = app.config["ORDER_TEMPLATES_FILE"]
+        try:
+            with order_templates.LOCK:
+                templates = order_templates.load(path)
+                template = order_templates.update(
+                    templates, template_id, request.get_json(silent=True)
+                )
+                if template is not None:
+                    order_templates.save(path, templates)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        if template is None:
+            return jsonify({"ok": False, "error": "template not found"}), 404
+        return jsonify({"ok": True, "template": template})
+
+    @app.delete("/api/tradility-templates/<template_id>")
+    def templates_delete(template_id: str):
+        path = app.config["ORDER_TEMPLATES_FILE"]
+        with order_templates.LOCK:
+            templates = order_templates.load(path)
+            removed = order_templates.delete(templates, template_id)
+            if removed:
+                order_templates.save(path, templates)
+        if not removed:
+            return jsonify({"ok": False, "error": "template not found"}), 404
+        return jsonify({"ok": True})
 
     @app.post("/api/tradility-trade/batch/<step>")
     def trader_batch(step: str):

@@ -91,6 +91,7 @@ def web_client(tmp_path):
             "HOLDINGS_FILE": holdings,
             "ORDERS_EXPORT": orders,
             "MANUAL_ORDERS_FILE": tmp_path / "manual-orders.json",
+            "ORDER_TEMPLATES_FILE": tmp_path / "order-templates.json",
             "TRADER_URL": "http://127.0.0.1:9",
             "REFRESH_COMMAND": "",
             "STALE_HOURS": 72,
