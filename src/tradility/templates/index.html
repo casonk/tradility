@@ -301,7 +301,10 @@
     .template-chips button.buy { border-color: color-mix(in srgb, var(--green) 60%, var(--border)); }
     .template-chips button.sell { border-color: color-mix(in srgb, var(--red) 60%, var(--border)); }
     .template-chips button.both { border-color: var(--accent); }
-    .template-chips .tpl-chip-label { flex-basis: 100%; font-size: 11px; color: var(--muted-fg); margin-top: 6px; }
+    .template-chips .tpl-group { flex-basis: 100%; }
+    .template-chips .tpl-chip-label { font-size: 11px; color: var(--muted-fg); margin: 2px 0 4px; }
+    .template-chips .tpl-chip-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
+    .template-chips .tpl-group > summary { font-size: 11px; padding: 3px 2px; }
     .tpl-pane { margin-top: 6px; }
     .template-chips button.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
     .order-effect { font-size: 11px; min-width: 190px; }
@@ -3225,8 +3228,14 @@
     {key: 'ladder-buy', label: 'Buy ladders'}, {key: 'ladder-sell', label: 'Sell ladders'},
     {key: 'straddle', label: 'Straddles'}];
   const tplGroupOf = t => t.side === 'both' ? 'straddle' : `${t.rungs.length > 1 ? 'ladder' : 'single'}-${t.side}`;
-  function tplClosedGroups() {
-    try { return new Set(JSON.parse(localStorage.getItem('tradility.tplClosed') || '[]')); } catch (err) { return new Set(); }
+  // which panes the viewer collapsed, remembered per list (the tab's saved list and the trading pane differ)
+  function tplClosedGroups(store = 'tradility.tplClosed') {
+    try { return new Set(JSON.parse(localStorage.getItem(store) || '[]')); } catch (err) { return new Set(); }
+  }
+  function tplRememberToggle(details, store) {
+    const set = tplClosedGroups(store);
+    if (details.open) set.delete(details.dataset.group); else set.add(details.dataset.group);
+    try { localStorage.setItem(store, JSON.stringify([...set])); } catch (err) { /* private mode: not remembered */ }
   }
 
   function renderSaved() {
@@ -3242,11 +3251,7 @@
         <summary>${esc(g.label)}<span class="tpl-count">(${g.items.length})</span></summary>
         <div class="tpl-group-body">${g.items.map(item).join('')}</div></details>`).join('')
       : '<div class="tpl-hint">No templates yet. Build one on the right and save it.</div>';
-    box.querySelectorAll('details.tpl-group').forEach(d => d.addEventListener('toggle', () => {
-      const set = tplClosedGroups();
-      if (d.open) set.delete(d.dataset.group); else set.add(d.dataset.group);
-      try { localStorage.setItem('tradility.tplClosed', JSON.stringify([...set])); } catch (err) { /* private mode: not remembered */ }
-    }));
+    box.querySelectorAll('details.tpl-group').forEach(d => d.addEventListener('toggle', () => tplRememberToggle(d, 'tradility.tplClosed')));
     box.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => {
       const t = tplList.find(x => x.id === b.dataset.open);
       if (t) { tplDraft = JSON.parse(JSON.stringify(t)); tplPreview = null; renderBuilder(); renderRun(); renderSaved(); }
@@ -3531,10 +3536,15 @@
     const box = document.getElementById('trade-templates');
     if (!box || !tradeQuote) return;
     paneList = paneItems();
-    const singles = [], ladders = [];
-    paneList.forEach((it, i) => (it.saved && tplIsLadder(it.saved) ? ladders : singles).push(i));
-    box.innerHTML = singles.map(paneChip).join('')
-      + (ladders.length ? `<div class="tpl-chip-label">Ladders and straddles: pick an account above, then a ladder to preview it here</div>${ladders.map(paneChip).join('')}` : '');
+    // the same strategy panes as the Order templates tab, each collapsible; policy shapes count as single orders
+    const groupOf = it => it.saved ? tplGroupOf(it.saved) : `single-${it.policy.side}`;
+    const closed = tplClosedGroups('tradility.paneClosed');
+    box.innerHTML = TPL_GROUPS.map(g => ({...g, idx: paneList.map((it, i) => i).filter(i => groupOf(paneList[i]) === g.key)})).filter(g => g.idx.length)
+      .map(g => `<details class="tpl-group" data-group="${g.key}" ${closed.has(g.key) ? '' : 'open'}>
+        <summary>${esc(g.label)}<span class="tpl-count">(${g.idx.length})</span></summary>
+        ${g.key.startsWith('single') ? '' : '<div class="tpl-chip-label">Pick an account above, then click to preview it here</div>'}
+        <div class="tpl-chip-row">${g.idx.map(paneChip).join('')}</div></details>`).join('');
+    box.querySelectorAll('details.tpl-group').forEach(d => d.addEventListener('toggle', () => tplRememberToggle(d, 'tradility.paneClosed')));
     box.querySelectorAll('button').forEach(button => button.addEventListener('click', () => pickTemplate(Number(button.dataset.pick), button)));
   }
 
