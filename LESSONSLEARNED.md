@@ -50,3 +50,13 @@ Unlike `CHATHISTORY.md`, this file should keep only reusable lessons that should
   Safari's `Response.json()` rejects it ("The string did not match the expected pattern") and every
   call that follows, such as the refresh token fetch, fails. Fill gaps before exporting, read NaN as
   null on the way out, and test responses with `parse_constant` raising.
+
+- **Test an order-placing screen against a fake trader service, never the real brokers.** Start
+  `trader_service` in a thread with the policy and the scripted `Fake` broker from `tests/test_trading.py`, point
+  the web app at it with `TRADILITY_TRADER_URL`, and drive the page in a real browser: preview sends nothing, a
+  wrong phrase sends nothing, a full ladder places in order, a refused rung stops the rest, and the audit trail
+  shows each step. A preview against the real trader still calls the broker's preview API on a real account.
+- **A batch of real orders needs its own confirmation rule.** A ladder always needs its typed phrase, even when
+  the policy lets single orders go with a click, is re-checked against the current price before the first order
+  is sent, and stops at the first rung that fails so it never leaves unexpected gaps. Every rung still obeys the
+  per-order cap and price band, and the whole must fit in the daily total.
