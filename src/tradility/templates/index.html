@@ -378,7 +378,7 @@
     body.popout-chart #detail-content .detail-card:not(#detail-chart-card) { display: none; }
     body.popout-chart .detail-layout { grid-template-columns: minmax(0, 1fr); }
     body.popout-chart .detail-chart-wrap { height: calc(100vh - 250px); min-height: 280px; }
-    .detail-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(240px, 1fr); gap: 16px; }
+    .detail-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(240px, 1fr); gap: 16px; align-items: start; }
     .detail-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 11px; padding: 14px; }
     /* every card collapses to its title; the choice is remembered (see initCollapsibleCards) */
     .cc-title { cursor: pointer; user-select: none; }
@@ -423,7 +423,7 @@
     .range-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted-fg); }
     /* minmax(0, 1fr) and min-width: 0 let a card shrink to the stack; an auto track would grow to the
        widest thing in it (a wide table, the order form) and push the whole stack off a narrow screen */
-    .detail-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
+    .detail-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; align-content: start; }
     .detail-card { min-width: 0; }
     #detail-orders-card { order: 2; }  /* the chart comes first, then the position and orders */
     .detail-loading { padding: 70px 20px; text-align: center; color: var(--muted-fg); }
