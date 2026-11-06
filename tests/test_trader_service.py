@@ -156,3 +156,23 @@ def test_a_refused_ladder_says_why_and_the_ladder_routes_are_header_gated(svc, m
     assert code == 422 and body["ok"] is False and "at least one rung" in body["error"]
     code, body = post(svc, "/batch/preview", {}, headers={"Host": "127.0.0.1:8768"})
     assert code == 403 and body["error"] == "not allowed"
+
+
+def test_status_lists_the_order_form_templates_the_builtin_set_or_the_policys_own(svc):
+    code, body = svc.handle("GET", "/status", GOOD, b"")
+    names = [x["name"] for x in body["templates"]]
+    assert code == 200 and names[:2] == ["Buy 1% under", "Buy 2% under"] and len(names) == 8
+    sells = [x for x in body["templates"] if x["side"] == "sell"]
+    assert [x["offset_pct"] for x in sells] == [1, 2, 4, 8]
+    custom = (("Buy 5% under, day", "buy", -5.0, "day", ""),)
+    svc.state["policy"] = __import__("dataclasses").replace(svc.state["policy"], templates=custom)
+    _, body = svc.handle("GET", "/status", GOOD, b"")
+    assert body["templates"] == [
+        {
+            "name": "Buy 5% under, day",
+            "side": "buy",
+            "offset_pct": -5.0,
+            "tif": "day",
+            "session": "",
+        }
+    ]
