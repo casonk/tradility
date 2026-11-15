@@ -379,3 +379,15 @@ def test_the_pod_never_fetches_orders_but_still_rebuilds_actuals():
     text = (REPO / "deploy" / "k3s" / "manifests" / "20-cronjob.yaml").read_text()
     assert 'name: TRADILITY_FETCH_ORDERS, value: "0"' in text
     assert 'name: TRADILITY_FETCH_ACTUALS, value: "1"' in text
+
+
+def test_k3s_up_stops_when_the_timer_is_still_active_after_disable(sandbox):
+    # `systemctl disable` failing silently (no user bus in an ssh or cron shell) must not let the pod start
+    # alongside the host timer.
+    env, log, tmp = sandbox
+    cluster_ready(tmp)
+    _stub(tmp / "bin" / "systemctl", log, "systemctl", 'case "$*" in *is-active*) exit 0 ;; esac')
+    done = run(env, "--mode", "k3s", "up")
+    assert done.returncode == 1 and "still active" in done.stderr
+    assert "handover.sh pod-on" not in calls(log)
+    assert not marker_path(tmp).exists()

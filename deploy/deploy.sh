@@ -107,6 +107,12 @@ case "$cmd:$mode" in
     "$K3S_DIR/verify.sh"
     # Hand over only after verify passed: the timer keeps running until the pod is proven.
     systemctl --user disable --now "$TIMER" 2>/dev/null || true
+    # `|| true` lets a timer that was never installed pass, but it also hides a failed disable (no user bus in
+    # an ssh or cron shell). Two copies of a job must never run, so check the timer is really off.
+    if systemctl --user is-active --quiet "$TIMER" 2>/dev/null; then
+      echo "$TIMER is still active; stopping here so the host timer and the CronJob never both run" >&2
+      exit 1
+    fi
     "$K3S_DIR/handover.sh" pod-on
     set_marker k3s
     ;;
