@@ -371,3 +371,11 @@ def test_pods_ask_for_the_real_hostname_first():
     for name in ("20-cronjob.yaml", "verify-pod.yaml"):
         text = (REPO / "deploy" / "k3s" / "manifests" / name).read_text()
         assert 'name: ndots, value: "1"' in text, name
+
+
+def test_the_pod_never_fetches_orders_but_still_rebuilds_actuals():
+    # The pod holds no broker credentials; fetching orders there once replaced the host's order history
+    # with an empty export.
+    text = (REPO / "deploy" / "k3s" / "manifests" / "20-cronjob.yaml").read_text()
+    assert 'name: TRADILITY_FETCH_ORDERS, value: "0"' in text
+    assert 'name: TRADILITY_FETCH_ACTUALS, value: "1"' in text

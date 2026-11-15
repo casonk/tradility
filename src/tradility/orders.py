@@ -478,13 +478,19 @@ def main(argv: list[str] | None = None) -> int:
         recent_days=args.recent_days,
         existing=existing,
     )
-    write_private(Path(args.output), result)
+    any_ok = any(info["ok"] for info in result["sources"].values())
+    # A run where every source failed (no token, no credentials, the broker down) has nothing to add; writing
+    # it would replace the history already on disk with an empty export. Keep what is there.
+    if any_ok or not Path(args.output).exists():
+        write_private(Path(args.output), result)
+    else:
+        print("every source failed; the existing export is kept", file=sys.stderr)
     for name, info in result["sources"].items():
         print(
             f"{name}: {info['orders']} orders" if info["ok"] else f"{name}: {info['error']}",
             file=sys.stderr,
         )
-    return 0 if any(info["ok"] for info in result["sources"].values()) else 1
+    return 0 if any_ok else 1
 
 
 if __name__ == "__main__":

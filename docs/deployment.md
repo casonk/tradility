@@ -70,6 +70,8 @@ held the work, so `host up` knows what to stop first.
   host with your `TRADILITY_SCHWAB_TOKEN_COMMAND` and stores it as the `tradility-schwab` Secret. A user timer
   (installed by the hand-over, removed on the way back) feeds one at 16:15 and 16:25 on weekdays, before the 16:30
   run. The long-lived refresh token never enters the cluster. With no valid token the run falls back to Yahoo.
+- **Orders stay on the host.** The pod does not fetch orders (`TRADILITY_FETCH_ORDERS=0`): the host's
+  `tradility-orders` timer owns `tradility-orders.json`, and the pod only rebuilds the actual-performance view from it.
 - **Binance.US stays on the host.** Its key is long-lived and can see an exchange account, so the pod has neither
   the key nor a network path to the exchange. The order fetch there reports it and the analysis is unaffected.
 - **Network.** Egress is limited to the Schwab API and the Yahoo Finance hosts yfinance uses (see

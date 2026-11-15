@@ -237,3 +237,30 @@ def test_a_recent_refresh_without_an_existing_export_falls_back_to_the_full_hist
     env = {"TRADILITY_SCHWAB_ACCESS_TOKEN": "tok"}
     o.collect([], get=get, env=env, now=NOW, only=("schwab",), recent_days=60, existing=None)
     assert len([u for u in urls if "/orders?" in u]) == 7
+
+
+def test_a_run_where_every_source_failed_keeps_the_existing_export(tmp_path, monkeypatch):
+    # The K3s refresh pod has no broker credentials; its order step once replaced a year of history with an
+    # empty export. When nothing succeeded there is nothing to write.
+    holdings = tmp_path / "holdings.json"
+    holdings.write_text(json.dumps({"holdings": []}))
+    out = tmp_path / "orders.json"
+    out.write_text(json.dumps({"orders": {"AAPL": [{"id": "1"}]}, "sources": {}, "version": 1}))
+    failed = {
+        "orders": {},
+        "sources": {"schwab": {"ok": False, "error": "no token"}},
+        "version": 1,
+    }
+    monkeypatch.setattr(o, "collect", lambda *a, **k: failed)
+    assert o.main(["--holdings", str(holdings), "--output", str(out)]) == 1
+    assert json.loads(out.read_text())["orders"] == {"AAPL": [{"id": "1"}]}
+
+
+def test_a_first_run_where_every_source_failed_still_records_why(tmp_path, monkeypatch):
+    holdings = tmp_path / "holdings.json"
+    holdings.write_text(json.dumps({"holdings": []}))
+    out = tmp_path / "orders.json"
+    failed = {"orders": {}, "sources": {"schwab": {"ok": False, "error": "no token"}}, "version": 1}
+    monkeypatch.setattr(o, "collect", lambda *a, **k: failed)
+    assert o.main(["--holdings", str(holdings), "--output", str(out)]) == 1
+    assert json.loads(out.read_text())["sources"]["schwab"]["ok"] is False
