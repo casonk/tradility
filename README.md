@@ -239,6 +239,39 @@ instruments. `vision_statement` is deliberately `null`: Yahoo's general-info
 contract does not provide a reliable company-authored mission/vision field, so
 Tradility will not relabel or generate one from the business description.
 
+### Benchmarks and sector/industry performance
+
+With profiles on, the CLI also fetches benchmark returns (1m–5y) into a `benchmarks` section and
+caches them for 24 hours in `tradility-benchmark-cache.json` (`--benchmark-cache`,
+`--skip-benchmarks`). The market is Vanguard's total-market ETF (`VTI`), each sector is Vanguard's
+matching sector ETF (`VGT`, `VHT`, …), and industries use Yahoo Finance's own industry indexes,
+since Vanguard has no industry funds. The web page's **Sectors** and **Industries** tabs, the
+**vs Industry** indicator, the benchmark sorts and the detail view's *Against its benchmarks* card
+all read them.
+
+Your own performance on those tabs has two bases, chosen in the tab's controls:
+
+- **If held throughout** (default): today's positions, weighted by value, as if held through each
+  whole window. It compares your current mix with the market; it is not your actual result.
+- **Actual, from your trades**: `python -m tradility.actuals` rebuilds each position's gain from
+  the filled orders (shares at the window's start = shares now − bought + sold) and adds an
+  `actuals` section to the analysis export. It is a Modified Dietz return on the money invested.
+  Dividends received are added to the gain (see below). Fees, interest on cash, options, positions
+  since sold and tickers whose share count does not reconcile with the fills (splits, transfers)
+  are left out and counted. A window that reaches back past a broker's order history (Schwab
+  reports about a year) is not shown. The scheduled refresh runs this step after the order and
+  income fetches; the page offers the basis only when `actuals` is present.
+
+### Dividends and interest
+
+`python -m tradility.income` reads Schwab's `DIVIDEND_OR_INTEREST` transactions (read-only, one year)
+into `exports/tradility-income.json`; `TRADILITY_FETCH_INCOME=0` skips it in the scheduled run.
+Schwab gives such a payment no ticker, only the security's abbreviated name (`TEXAS INSTRS INC`), so
+`tradility.income.match_ticker` matches it against the company names Tradility already has and
+leaves it unattributed when the name fits no holding or several. Payments that fit a position
+reconciled in the actual return are added to its gain; the rest are shown as "left out". Interest on
+cash and money-market funds belongs to no position, so it is reported separately and not counted.
+
 ## Scheduled refresh
 
 `scripts/run_scheduled_analysis.sh` is the non-interactive workload entry point.

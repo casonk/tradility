@@ -26,6 +26,7 @@ from typing import Any
 from flask import Flask, abort, jsonify, render_template, request, session
 
 from tradility import order_templates, web_state
+from tradility.actuals import analysis_ticker
 from tradility.live import live_indicators
 from tradility.live import today_dates as live_today
 
@@ -135,6 +136,26 @@ def _holdings(app: Flask) -> list[Any]:
     return rows if isinstance(rows, list) else []
 
 
+def _held_quantities(app: Flask) -> dict[str, float]:
+    """Total shares held per ticker, from the holdings export (empty when none is configured)."""
+    held: dict[str, float] = {}
+    rows = [r for r in _holdings(app) if isinstance(r, dict)]
+    plain = {
+        str(r.get("ticker", "")).strip().upper() for r in rows if r.get("asset_class") != "Crypto"
+    }
+    for row in rows:
+        try:
+            quantity = float(row.get("total_quantity") or 0)
+        except (TypeError, ValueError):
+            continue
+        ticker = analysis_ticker(
+            row, plain
+        )  # a coin sharing a stock's symbol is T-USD in the analysis
+        if ticker and quantity > 0:
+            held[ticker] = held.get(ticker, 0.0) + quantity
+    return held
+
+
 def _order_summary(app: Flask, ticker: str) -> dict[str, Any]:
     return web_state.summary(
         ticker,
@@ -201,13 +222,21 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
             return jsonify({"ok": False, "error": str(exc)}), 404
         except RuntimeError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
+        held = _held_quantities(app)
         for record in data.get("tickers", []):
             if not isinstance(record, dict):
                 continue
+            quantity = held.get(str(record.get("ticker", "")).strip().upper())
+            if quantity:
+                record["held_quantity"] = quantity  # sizes the portfolio-weighted performance
             history = record.pop("price_history", [])
             record.pop("live_bars", None)  # server-side input for live indicators only
             profile = record.pop("company_profile", {})
             record["detail_available"] = bool(history)
+            if isinstance(profile, dict):
+                # the small classification fields the Sectors / Industries tabs group by
+                for key in ("sector", "industry", "category"):
+                    record[key] = str(profile.get(key) or "")
             record["profile_available"] = bool(
                 isinstance(profile, dict) and profile.get("available")
             )

@@ -462,8 +462,34 @@
     .view-tabs button[aria-selected="true"] { color: var(--text); background: var(--bg); border-color: var(--border); margin-bottom: -1px; }
     #templates-view { display: none; padding: 16px 20px 48px; }
     body.view-templates #templates-view { display: block; }
+    #groups-view { display: none; padding: 16px 20px 48px; }
+    body.view-groups #groups-view { display: block; }
     body.view-templates .controls, body.view-templates .legend, body.view-templates .accounts-panel,
-    body.view-templates .stats-bar, body.view-templates main { display: none; }
+    body.view-templates .stats-bar, body.view-templates main,
+    body.view-groups .controls, body.view-groups .legend, body.view-groups .accounts-panel,
+    body.view-groups .stats-bar, body.view-groups main { display: none; }
+    .grp-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .grp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 12px; }
+    .grp-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
+    .grp-card h3 { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+    .grp-sub { font-size: 11px; color: var(--muted-fg); margin: 2px 0 8px; }
+    .grp-desc { font-size: 12px; color: var(--muted-fg); margin: 0 0 10px; line-height: 1.45; }
+    .grp-summary { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+    .grp-summary h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-fg); margin: 0 0 8px; }
+    .grp-compare > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted-fg); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+    .grp-perf { width: 100%; margin: 0 0 10px; }
+    .grp-perf .bench-gap td { border-top: none; padding-top: 0; font-size: 10px; color: var(--muted-fg); }
+    .grp-summary .grp-perf { margin-bottom: 6px; }
+    .grp-returns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+    .grp-returns div { background: var(--surface2); border-radius: 6px; padding: 5px 8px; font-size: 10px; color: var(--muted-fg); }
+    .grp-returns strong { display: block; font-size: 13px; font-family: var(--mono); }
+    .grp-mix { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--border); margin: 4px 0 3px; }
+    .grp-mix span { display: block; }
+    .grp-mix-lbl { font-size: 10px; color: var(--muted-fg); margin-bottom: 10px; }
+    .grp-members { display: flex; flex-wrap: wrap; gap: 4px; }
+    .grp-members button { font: inherit; font-family: var(--mono); font-size: 11px; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; cursor: pointer; }
+    .grp-members button:hover { border-color: var(--accent); }
+    .grp-best { font-size: 11px; color: var(--muted-fg); margin-bottom: 8px; }
     .tpl-layout { display: grid; grid-template-columns: minmax(300px, 520px) minmax(0, 1fr); gap: 16px; align-items: start; }
     .tpl-group { margin-bottom: 8px; }
     .tpl-group > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted-fg); padding: 6px 2px; list-style-position: inside; user-select: none; }
@@ -510,6 +536,8 @@
 <nav class="view-tabs" role="tablist" aria-label="Views">
   <button type="button" role="tab" id="tab-signals" aria-selected="true" aria-controls="grid-container" onclick="showView('signals')">Signals</button>
   <button type="button" role="tab" id="tab-templates" aria-selected="false" aria-controls="templates-view" tabindex="-1" onclick="showView('templates')">Order templates</button>
+  <button type="button" role="tab" id="tab-sectors" aria-selected="false" aria-controls="groups-view" tabindex="-1" onclick="showView('sectors')">Sectors</button>
+  <button type="button" role="tab" id="tab-industries" aria-selected="false" aria-controls="groups-view" tabindex="-1" onclick="showView('industries')">Industries</button>
 </nav>
 
 <div class="controls">
@@ -518,6 +546,7 @@
     <button class="ind-btn active" data-ind="rsi"  aria-pressed="true" onclick="toggleIndicator('rsi')"><span class="ind-name">RSI 14</span><span class="ind-tag"></span></button>
     <button class="ind-btn" data-ind="vwap"  aria-pressed="false" onclick="toggleIndicator('vwap')"><span class="ind-name">VWAP 20</span><span class="ind-tag"></span></button>
     <button class="ind-btn" data-ind="trend"  aria-pressed="false" onclick="toggleIndicator('trend')"><span class="ind-name">Trend 50/200</span><span class="ind-tag"></span></button>
+    <button class="ind-btn" data-ind="bench" aria-pressed="false" onclick="toggleIndicator('bench')" title="How far each holding's return is ahead of or behind its industry (or sector) over a chosen window"><span class="ind-name">vs Industry</span><span class="ind-tag"></span></button>
     <button class="ind-btn" data-ind="fund"  aria-pressed="false" onclick="toggleIndicator('fund')" title="Schwab fundamentals: valuation, profitability, growth, balance sheet"><span class="ind-name">Fundamentals</span><span class="ind-tag"></span></button>
   </div>
 
@@ -538,6 +567,9 @@
     <option value="ticker">Sort: ticker A–Z</option>
     <option value="price-desc">Sort: price ↓</option>
     <option value="target-gap">Sort: furthest below target</option>
+    <option value="bench-signal">Sort: benchmark signal (buy first)</option>
+    <option value="bench-behind">Sort: furthest behind its industry</option>
+    <option value="bench-ahead">Sort: furthest ahead of its industry</option>
   </select>
 
   <label class="controls-label" for="live-select" title="How often live prices are fetched for every ticker on this page">Live</label>
@@ -582,6 +614,25 @@
 <main>
   <div id="grid-container"><div class="state-msg">Loading…</div></div>
 </main>
+
+<section id="groups-view" role="tabpanel" aria-labelledby="tab-sectors">
+  <div class="grp-controls">
+    <input class="search-input" id="grp-search" type="text" placeholder="Search…" oninput="renderGroups()" aria-label="Search groups and holdings">
+    <select class="sort-select" id="grp-sectorset" onchange="setting('bench.set', this.value)" aria-label="Which sector benchmarks to use" title="Which funds or indexes measure each sector (also used by the vs Industry indicator's sector fallback and the detail view)" hidden></select>
+    <select class="sort-select" id="grp-basis" onchange="setGroupBasis(this.value)" aria-label="How your performance is measured" title="If held: today's positions as if held through the whole window. Actual: what your positions earned given the trades you made (price gain only).">
+      <option value="held">Yours: if held throughout</option>
+      <option value="actual">Yours: actual, from your trades</option>
+    </select>
+    <select class="sort-select" id="grp-sort" onchange="renderGroups()" aria-label="Sort groups">
+      <option value="mine">Sort: your 1-year return</option>
+      <option value="gap">Sort: furthest ahead of index (1y)</option>
+      <option value="gap-asc">Sort: furthest behind index (1y)</option>
+      <option value="count">Sort: most tickers</option>
+      <option value="name">Sort: name A–Z</option>
+    </select>
+  </div>
+  <div id="grp-body"></div>
+</section>
 
 <section id="templates-view" role="tabpanel" aria-labelledby="tab-templates">
   <div class="tpl-layout">
@@ -655,6 +706,7 @@
     rsi:   { period: 14, buy: 30, sell: 70 },          // window, and the oversold / overbought bands
     vwap:  { window: 20, band: 3 },                     // window, and how far from VWAP is decisive (%)
     trend: { short: 50, long: 200, gap: 5 },           // the two averages, and a decisive gap (%)
+    bench: { window: '1y', against: 'industry', read: 'blend', band: 10, set: 'vanguard' },   // return window, peer group, which side is a buy (laggard | blend | leader), decisive gap (points), sector benchmark set
     fund:  { groups: ['valuation', 'profitability', 'growth', 'balance', 'short'], agree: 50 },
   };
   const FUND_GROUPS = {
@@ -707,7 +759,47 @@
   }
   const indName = ind => ind === 'rsi' ? `RSI ${settings.rsi.period}`
     : ind === 'vwap' ? `VWAP ${settings.vwap.window}`
-    : ind === 'trend' ? `Trend ${settings.trend.short}/${settings.trend.long}` : 'Fundamentals';
+    : ind === 'trend' ? `Trend ${settings.trend.short}/${settings.trend.long}`
+    : ind === 'bench' ? `vs ${settings.bench.against === 'sector' ? 'Sector' : 'Industry'} ${settings.bench.window}` : 'Fundamentals';
+
+  // ── Benchmarks: a holding's return against its industry's / sector's index ──
+  const BENCH_WINDOWS = ['1m', '3m', '1y'];
+  // The sector benchmarks in use: Vanguard ETFs, SPDR ETFs or Yahoo's indexes (older data has only one set).
+  const sectorSets = () => {   // the default set first (the server's JSON key order is alphabetical)
+    const all = benchmarks.sector_sets || {}, first = benchmarks.default_sector_set;
+    return Object.fromEntries(Object.entries(all).sort(([a], [b]) => (b === first) - (a === first)));
+  };
+  function sectorBench() {
+    const sets = sectorSets(), chosen = sets[settings.bench.set] || sets[benchmarks.default_sector_set];
+    return (chosen && chosen.sectors) || benchmarks.sectors || {};
+  }
+  const sectorSetLabel = () => {
+    const sets = sectorSets(), chosen = sets[settings.bench.set] || sets[benchmarks.default_sector_set];
+    return chosen ? chosen.label : 'Sector benchmark';
+  };
+  // A series the server flagged as having an impossible daily move (a data glitch) is not used at all.
+  const rawBenchReturn = (entry, w) => (entry && entry.returns && entry.returns[w] != null ? Number(entry.returns[w]) : null);
+  const benchReturn = (entry, w) => (entry && entry.suspect ? null : rawBenchReturn(entry, w));
+  // The index a ticker is measured against: its industry, else its sector (or only the sector when chosen).
+  function benchRef(t, w = settings.bench.window) {
+    const sector = t.sector && sectorBench()[t.sector];
+    const industry = t.industry && (benchmarks.industries || {})[t.industry];
+    if (settings.bench.against !== 'sector' && benchReturn(industry, w) != null) return {kind: 'industry', name: t.industry, ret: benchReturn(industry, w)};
+    if (benchReturn(sector, w) != null) return {kind: 'sector', name: t.sector, ret: benchReturn(sector, w)};
+    return null;
+  }
+  // Percentage points ahead (+) or behind (−) the index over the chosen window.
+  function benchDelta(t, w = settings.bench.window) {
+    const own = t.returns && t.returns[w];
+    const ref = benchRef(t, w);
+    if (own == null || !ref) return null;
+    return {delta: Number(own) - ref.ret, own: Number(own), ref};
+  }
+  // A sustained leader is ahead of its index over the chosen window and every longer one (3m and 1y at
+  // least), so a stock that only just pulled ahead after lagging is not mistaken for one.
+  function sustainedLeader(t) {
+    return [...new Set([settings.bench.window, '3m', '1y'])].every(w => { const d = benchDelta(t, w); return d && d.delta > 0; });
+  }
 
   // Each indicator reads as a probability that the ticker is a buy: t=1 buy/green, t=0 sell/red
   // (inverse of the raw colormap for RSI/VWAP). null means the indicator has no value.
@@ -722,6 +814,18 @@
       if (p == null || v == null || v === 0) return null;
       const d = (p - v) / v;                   // % above/below VWAP
       return Math.max(0, Math.min(1, 0.5 - d / 0.6));  // ±30% mapped to [0,1]
+    }
+    if (ind === 'bench') {
+      const d = benchDelta(ticker);
+      if (!d) return null;
+      // lagging its peers reads as a buy (like RSI and VWAP) unless "leaders" is chosen; ±30 points spans the scale
+      const lean = Math.max(-0.5, Math.min(0.5, d.delta / 60));
+      const mode = settings.bench.read;
+      if (mode === 'leader') return 0.5 + lean;
+      // blend: behind its peers is a buy, and so is a sustained leader (at half the strength, since the
+      // laggard's discount is the stronger case); a lead that is only recent reads as stretched
+      if (mode === 'blend' && d.delta > 0 && sustainedLeader(ticker)) return 0.5 + lean / 2;
+      return 0.5 - lean;
     }
     if (ind === 'fund') {
       // the share of fundamental rules that lean one way, held to 0.1–0.9 like the other reads
@@ -758,6 +862,7 @@
       const v = vwapValue(ticker);
       return Math.abs((ticker.last_price - v) / v) >= settings.vwap.band / 100;
     }
+    if (ind === 'bench') return Math.abs(benchDelta(ticker).delta) >= settings.bench.band;
     if (ind === 'fund') {
       const read = fundRead(ticker);
       return Math.abs(read.score / read.n) >= settings.fund.agree / 100;
@@ -842,6 +947,15 @@
       document.getElementById('legend-lbl-buy').textContent  = `Below VWAP ${settings.vwap.window} (buy)`;
       document.getElementById('legend-lbl-mid').textContent  = 'At VWAP';
       document.getElementById('legend-lbl-sell').textContent = 'Above VWAP (sell)';
+    } else if (activeIndicator() === 'bench') {
+      const leader = settings.bench.read === 'leader', blend = settings.bench.read === 'blend', peer = settings.bench.against === 'sector' ? 'sector' : 'industry';
+      document.getElementById('legend-ticks').innerHTML =
+        leader ? '<span>+30 pts</span><span></span><span>0</span><span></span><span>−30 pts</span>'
+               : '<span>−30 pts</span><span></span><span>0</span><span></span><span>+30 pts</span>';
+      document.getElementById('legend-lbl-buy').textContent  = leader ? `Ahead of its ${peer} (buy)` : `Behind its ${peer} (buy)`;
+      document.getElementById('legend-lbl-mid').textContent  = 'In line';
+      document.getElementById('legend-lbl-sell').textContent = leader ? `Behind its ${peer} (sell)`
+        : blend ? `Only recently ahead of its ${peer} (sell)` : `Ahead of its ${peer} (sell)`;
     } else if (activeIndicator() === 'fund') {
       document.getElementById('legend-ticks').innerHTML =
         '<span>Strong</span><span></span><span>Mixed</span><span></span><span>Weak</span>';
@@ -864,6 +978,8 @@
   const activeIndicator = () => [...activeIndicators][0];
   let activeClasses   = new Set(['all']);
   let allClasses      = [];
+  let actualsData     = null;  // per-position gain and invested base rebuilt from the order history
+  let benchmarks      = {};   // market / sector / industry index returns the server fetched
   let csrfToken       = '';
   let detailRecord    = null;
   // One chart range for every card: changing it on one chart changes all of them, and it is
@@ -909,8 +1025,12 @@
     csrfToken = data.csrf_token || csrfToken;
     artifactVersion = data.artifact_version || '';
     allTickers = data.tickers || [];
+    benchmarks = data.benchmarks || {};
+    if (typeof buildSettingsPanel === 'function') buildSettingsPanel();   // the sector benchmark choice depends on what arrived
+    actualsData = data.actuals && data.actuals.tickers ? data.actuals : null;
     for (const t of allTickers) t.close_price = t.last_price;  // the stored close, before any live overlay
     overlayLive();
+    if (typeof renderGroups === 'function') renderGroups();
     if (data.generated_at) {
       const d = new Date(data.generated_at);
       const meta = document.getElementById('meta-generated');
@@ -1184,6 +1304,13 @@
       }
       return { label: indName('vwap'), value: v != null ? fmtPrice(v) : '—', extra, note };
     }
+    if (ind === 'bench') {
+      const d = benchDelta(t);
+      const w = settings.bench.window;
+      const value = d ? `${d.delta >= 0 ? '+' : '−'}${Math.abs(d.delta).toFixed(1)} pts` : '—';
+      const extra = d ? `<div class="vwap-delta" style="${col}">${formatReturn(d.own)} vs ${esc(d.ref.name)} ${formatReturn(d.ref.ret)} (${w})</div>` : '';
+      return { label: `vs ${settings.bench.against === 'sector' ? 'Sector' : 'Industry'}`, value, extra, note };
+    }
     if (ind === 'fund') {
       const read = fundRead(t);
       const value = read ? ratingLabel(fundRating(read)) : '—';
@@ -1223,6 +1350,13 @@
         const ga = targetGap(a.ticker), gb = targetGap(b.ticker);   // largest shortfall first; no target last
         if (ga === null || gb === null) return (ga === null) - (gb === null) || a.ticker.localeCompare(b.ticker);
         return gb - ga || a.ticker.localeCompare(b.ticker);
+      }
+      if (sort.startsWith('bench-')) {   // by the benchmark indicator alone, whatever indicators are selected
+        const key = sort === 'bench-signal' ? x => signalT(x, 'bench') : x => { const d = benchDelta(x); return d ? d.delta : null; };
+        const ka = key(a), kb = key(b);
+        if (ka === null || kb === null) return (ka === null) - (kb === null) || a.ticker.localeCompare(b.ticker);
+        const dir = sort === 'bench-behind' ? 1 : -1;   // behind: most negative first; signal and ahead: highest first
+        return dir * (ka - kb) || a.ticker.localeCompare(b.ticker);
       }
       if (sort === 'value-desc')  return (a._t ?? -1) - (b._t ?? -1); // low t (sell) first
       // value-asc: high t (buy/green) first; nulls last
@@ -1306,6 +1440,9 @@
           badge = rv <= settings.rsi.buy ? 'Oversold' : rv >= settings.rsi.sell ? 'Overbought' : 'Neutral';
         } else if (activeIndicator() === 'vwap') {
           badge = t._t > 0.55 ? 'Below' : t._t < 0.45 ? 'Above' : 'At VWAP';
+        } else if (activeIndicator() === 'bench') {
+          const bd = benchDelta(t);
+          badge = bd && Math.abs(bd.delta) >= 1 ? (bd.delta > 0 ? (sustainedLeader(t) ? 'Leader' : 'Ahead') : 'Behind') : 'In line';
         } else if (activeIndicator() === 'fund') {
           badge = t._t > 0.6 ? 'Strong' : t._t < 0.4 ? 'Weak' : 'Mixed';
         } else {
@@ -1658,6 +1795,7 @@
             <div class="detail-chart-wrap"><canvas id="detail-chart"></canvas></div>
             <div class="detail-chart-summary" id="detail-chart-summary"></div>
           </section>
+          ${benchmarkCardHtml(t)}
           <section class="detail-card">
             <div class="detail-card-title">Period performance</div>
             <div class="return-grid">
@@ -1685,6 +1823,41 @@
         </div>
       </div>`;
     requestAnimationFrame(drawDetailChart);
+  }
+
+  // The ticker against its industry index, its sector ETF and the whole market, window by window.
+  function benchmarkCardHtml(t) {
+    const profile = t.company_profile || {};
+    const listed = allTickers.find(x => x.ticker === t.ticker) || {};
+    const sector = t.sector || profile.sector || listed.sector || '';
+    const industry = t.industry || profile.industry || listed.industry || '';
+    const sec = sector && sectorBench()[sector];
+    const ind = industry && (benchmarks.industries || {})[industry];
+    const mkt = benchmarks.market;
+    const refs = [
+      ind ? {label: `Industry · ${esc(industry)}${ind.suspect ? ' ⚠ data unreliable, not used' : ''}`, title: `Yahoo Finance industry index ${ind.symbol}`, entry: ind} : null,
+      sec ? {label: `Sector · ${esc(sector)} (${esc(sec.symbol)})${sec.suspect ? ' ⚠ data unreliable, not used' : ''}`, title: `${esc(sectorSetLabel())}`, entry: sec} : null,
+      mkt ? {label: `Market · ${esc(mkt.symbol)}`, title: esc(mkt.name), entry: mkt} : null,
+    ].filter(Boolean);
+    if (!refs.length || !t.returns) return '';
+    const win = PERF_WINDOWS;
+    const own = t.returns;
+    const head = win.map(([, l]) => `<th class="num">${l}</th>`).join('');
+    const cell = (v, fmt) => `<td class="num ${returnClass(v)}">${fmt(v)}</td>`;
+    const rows = [`<tr><td><strong>${esc(t.ticker)}</strong></td>${win.map(([w]) => cell(own[w], formatReturn)).join('')}</tr>`];
+    for (const r of refs) {
+      rows.push(`<tr><td title="${r.title}">${r.label}</td>${win.map(([w]) => cell(benchReturn(r.entry, w), formatReturn)).join('')}</tr>`);
+      const gap = w => (own[w] != null && benchReturn(r.entry, w) != null ? Number(own[w]) - benchReturn(r.entry, w) : null);
+      rows.push(`<tr class="bench-gap"><td>${esc(t.ticker)} vs this</td>${win.map(([w]) => cell(gap(w), pts)).join('')}</tr>`);
+    }
+    const d = benchDelta(t);
+    const lead = d && sustainedLeader(t);
+    const read = d ? `<p class="detail-disclaimer">Over ${esc(settings.bench.window)} ${esc(t.ticker)} is ${Math.abs(d.delta).toFixed(1)} points ${d.delta >= 0 ? 'ahead of' : 'behind'} its ${esc(d.ref.kind)}${lead ? ' and has led it over every window that counts, so it reads as a sustained leader' : ''}.</p>` : '';
+    return `<section class="detail-card" id="detail-bench-card">
+      <div class="detail-card-title">Against its benchmarks</div>
+      <table class="orders-table grp-perf"><thead><tr><th></th>${head}</tr></thead><tbody>${rows.join('')}</tbody></table>
+      ${read}
+    </section>`;
   }
 
   // Schwab fundamentals: the figures, and for companies the rules that read them as buy or sell.
@@ -3083,6 +3256,7 @@
     paintIndicatorButtons();
     paintLegend();
     renderGrid();
+    if (typeof renderGroups === 'function') renderGroups();
   }
   function selectHtml(path, current, options, suffix = '') {
     return `<select onchange="setting('${path}', Number(this.value))">${options.map(o =>
@@ -3104,6 +3278,13 @@
         <label>Averages <select onchange="const [a, b] = this.value.split('/').map(Number); settings.trend.short = a; settings.trend.long = b; applySettings();">${SMA_PAIRS.map(pair =>
           `<option value="${pair}" ${pair === s.trend.short + '/' + s.trend.long ? 'selected' : ''}>${pair}-day</option>`).join('')}</select></label>
         <label>Decisive gap ${selectHtml('trend.gap', s.trend.gap, [2, 5, 10], '%')}</label>
+      </div></div>
+      <div class="ind-set"><h4>vs Industry / Sector</h4><div class="ind-set-row">
+        <label>Window <select onchange="setting('bench.window', this.value)">${BENCH_WINDOWS.map(w => `<option value="${w}" ${w === s.bench.window ? 'selected' : ''}>${w}</option>`).join('')}</select></label>
+        <label>Compare with <select onchange="setting('bench.against', this.value)"><option value="industry" ${s.bench.against !== 'sector' ? 'selected' : ''}>Industry (sector if none)</option><option value="sector" ${s.bench.against === 'sector' ? 'selected' : ''}>Sector</option></select></label>
+        <label>A buy is a <select onchange="setting('bench.read', this.value)"><option value="blend" ${s.bench.read === 'blend' ? 'selected' : ''}>laggard, or a sustained leader</option><option value="laggard" ${s.bench.read === 'laggard' ? 'selected' : ''}>laggard only (behind peers)</option><option value="leader" ${s.bench.read === 'leader' ? 'selected' : ''}>leader (ahead of peers)</option></select></label>
+        <label>Decisive beyond ±${selectHtml('bench.band', s.bench.band, [5, 10, 20, 30], ' pts')}</label>
+        ${Object.keys(sectorSets()).length > 1 ? `<label>Sector benchmark <select onchange="setting('bench.set', this.value)">${Object.entries(sectorSets()).map(([id, v]) => `<option value="${id}" ${id === s.bench.set ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}</select></label>` : ''}
       </div></div>
       <div class="ind-set"><h4>Fundamentals</h4><div class="ind-set-row">
         ${Object.keys(FUND_GROUPS).map(g => `<label><input type="checkbox" ${s.fund.groups.includes(g) ? 'checked' : ''} onchange="toggleFundGroup('${g}', this.checked)">${FUND_GROUP_LABELS[g]}</label>`).join('')}
@@ -3153,17 +3334,252 @@
     `<option value="${v}" ${v === value ? 'selected' : ''}>${label}</option>`).join('');
   const tplIsCoin = ticker => /-USD$/.test(ticker);
 
+  const GROUP_VIEWS = ['sectors', 'industries'];
+  let groupView = 'sectors';
+
   function showView(view) {
     const templates = view === 'templates';
+    const groups = GROUP_VIEWS.includes(view);
+    if (groups) groupView = view;
     document.body.classList.toggle('view-templates', templates);
-    for (const [id, on] of [['tab-signals', !templates], ['tab-templates', templates]]) {
+    document.body.classList.toggle('view-groups', groups);
+    for (const [id, on] of [['tab-signals', !templates && !groups], ['tab-templates', templates],
+                            ['tab-sectors', view === 'sectors'], ['tab-industries', view === 'industries']]) {
       const tab = document.getElementById(id);
       tab.setAttribute('aria-selected', String(on));
       tab.tabIndex = on ? 0 : -1;
     }
-    try { history.replaceState(null, '', templates ? '#templates' : location.pathname + location.search); } catch (e) {}
+    document.getElementById('groups-view').setAttribute('aria-labelledby', `tab-${groupView}`);
+    try { history.replaceState(null, '', (templates || groups) ? '#' + view : location.pathname + location.search); } catch (e) {}
+    if (groups) renderGroups();
     if (templates) tplReady = tplReady || initTemplates();
     return tplReady;
+  }
+
+  // ── Sectors / Industries ──
+  // Grouped from the per-ticker classification the analysis already carries; nothing here is fetched.
+  // Descriptions are short, generic notes on what each Yahoo sector covers, not claims about the holdings.
+  const SECTOR_NOTES = {
+    'Technology': 'Software, semiconductors, hardware and IT services.',
+    'Healthcare': 'Drugmakers, biotech, medical devices and care providers.',
+    'Financial Services': 'Banks, insurers, asset managers and payment networks.',
+    'Consumer Cyclical': 'Discretionary spending: retail, autos, travel, homebuilding.',
+    'Consumer Defensive': 'Staples: food, beverages, household goods and grocers.',
+    'Industrials': 'Aerospace and defense, machinery, transport and construction.',
+    'Energy': 'Oil and gas producers, services, refiners and pipelines.',
+    'Basic Materials': 'Chemicals, metals and mining, paper and construction materials.',
+    'Utilities': 'Regulated and independent electricity, gas and water providers.',
+    'Communication Services': 'Telecom, media, entertainment and interactive platforms.',
+    'Real Estate': 'REITs and property developers and services.',
+  };
+  // ── Portfolio-weighted performance ──
+  // Each position is weighted by its current value (shares held × price), as if held through the
+  // window. Without a holdings export the weight falls back to the To Invest allocation, and
+  // without either every ticker counts equally; the basis is named wherever a number is shown.
+  const PERF_WINDOWS = [['1m', '1 month'], ['3m', '3 months'], ['1y', '1 year'], ['3y', '3 years'], ['5y', '5 years']];
+  const HAS_QTY = () => allTickers.some(t => t.held_quantity);
+  function positionWeight(t) {
+    if (t.asset_class === 'Options') return 0;   // premiums and contract sizes do not compare with shares
+    if (HAS_QTY()) {
+      const price = livePrice(t) ?? t.last_price;
+      return t.held_quantity && price != null ? t.held_quantity * price : 0;
+    }
+    if (targetsData) {                                    // To Invest allocations are percentages, so a ticker outside the list has none
+      const target = targetFor(t.ticker);
+      return target && target.current != null ? Number(target.current) || 0 : 0;
+    }
+    return 1;
+  }
+  const weightBasis = () => (HAS_QTY() ? 'position value' : (targetsData ? 'To Invest allocation' : 'equal weight'));
+
+  // {value, n}: your return over a window for these members, on the chosen basis.
+  //  held:   today's positions weighted by value, as if held through the whole window.
+  //  actual: the money actually in them, rebuilt from filled orders (gain / invested base, summed).
+  let groupBasis = 'held';
+  try { groupBasis = localStorage.getItem('tradility-group-basis') === 'actual' ? 'actual' : 'held'; } catch (_) { /* default */ }
+  const basisIsActual = () => groupBasis === 'actual' && !!actualsData;
+  function setGroupBasis(value) {
+    groupBasis = value === 'actual' ? 'actual' : 'held';
+    try { localStorage.setItem('tradility-group-basis', groupBasis); } catch (_) { /* not remembered */ }
+    renderGroups();
+  }
+  function weightedReturn(members, w) {
+    if (basisIsActual()) {
+      let gain = 0, base = 0, n = 0;
+      for (const t of members) {
+        const e = actualsData.tickers[t.ticker] && actualsData.tickers[t.ticker][w];
+        if (!e) continue;
+        gain += e[0]; base += e[1]; n++;
+      }
+      return {value: base > 0 ? gain / base * 100 : null, n};
+    }
+    let sum = 0, weight = 0, n = 0;
+    for (const t of members) {
+      const r = t.returns && t.returns[w];
+      const wt = positionWeight(t);
+      if (r == null || !(wt > 0)) continue;
+      sum += Number(r) * wt; weight += wt; n++;
+    }
+    return {value: weight ? sum / weight : null, n};
+  }
+  // of the actual return, the part that is dividends received (null without income data)
+  function incomeShare(members, w) {
+    if (!basisIsActual() || !(actualsData.income && actualsData.income[w])) return null;
+    let inc = 0, base = 0;
+    for (const t of members) {
+      const e = actualsData.tickers[t.ticker] && actualsData.tickers[t.ticker][w];
+      if (!e || e.length < 3) continue;
+      inc += e[2]; base += e[1];
+    }
+    return base > 0 ? inc / base * 100 : null;
+  }
+  const basisLabel = () => (basisIsActual() ? 'actual, from your trades' : 'if held throughout');
+  // what the footnote says about the basis, with the order-history coverage for the actual one
+  function basisNote(held) {
+    if (!basisIsActual()) {
+      return `Your portfolio is today's ${held.length} position${held.length === 1 ? '' : 's'}, weighted by ${esc(weightBasis())}, as if you had held them through each whole window. It is not your actual result.`;
+    }
+    const a = actualsData, cov = PERF_WINDOWS.map(([w, l]) => [l, a.windows && a.windows[w]]).filter(([, c]) => c && c.available);
+    const starts = Object.entries(a.history_starts || {}).map(([k, v]) => `${k} from ${v}`).join(', ');
+    const inc = a.income || {}, hasInc = Object.keys(inc).length > 0;
+    const usd = v => '$' + Math.round(v).toLocaleString();
+    const incText = PERF_WINDOWS.filter(([w]) => inc[w]).map(([w, l]) => `${l}: ${usd(inc[w].included)} of dividends counted`
+      + (inc[w].left_out > 0.5 ? `, ${usd(inc[w].left_out)} that could not be matched to a position left out` : '')
+      + (inc[w].interest > 0.5 ? `, ${usd(inc[w].interest)} of cash interest not counted` : '')).join('; ');
+    return `Actual: the gain on the shares you held, rebuilt from your filled orders`
+      + (hasInc ? ', plus the dividends received on them' : ' (price gain only; no dividend data yet)')
+      + ` (no fees; options and positions since sold are left out). `
+      + (cov.length ? `Covers ${cov.map(([l, c]) => `${l}: ${c.positions} of ${c.of} positions (${Math.round((c.value_share || 0) * 100)}% of value)`).join('; ')}. ` : '')
+      + (hasInc ? `Income: ${incText}. ` : '')
+      + `Order history: ${esc(starts || 'none')}, so longer windows are not shown.`;
+  }
+  const pts = v => (v == null ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)} pts`);
+
+  function groupKey(t) {
+    if (groupView === 'sectors') return t.sector || (t.asset_class && t.asset_class !== 'Equity' ? `${t.asset_class} (no sector)` : 'Unclassified');
+    return t.industry || t.category || (t.asset_class && t.asset_class !== 'Equity' ? `${t.asset_class} (no industry)` : 'Unclassified');
+  }
+
+  // A small table: the index, your holdings in it, and the gap between them, per window.
+  function perfTable(rows, windows) {
+    const head = windows.map(([, label]) => `<th class="num">${label}</th>`).join('');
+    const cells = (vals, fmt) => windows.map(([w]) => `<td class="num ${returnClass(vals[w])}">${fmt === pts ? pts(vals[w]) : formatReturn(vals[w])}</td>`).join('');
+    return `<table class="orders-table grp-perf"><thead><tr><th></th>${head}</tr></thead><tbody>${rows.map(r =>
+      `<tr><td title="${esc(r.title || '')}">${r.label}</td>${cells(r.vals, r.fmt)}</tr>`).join('')}</tbody></table>`;
+  }
+
+  function summaryStrip() {
+    const market = benchmarks.market;
+    const held = allTickers.filter(t => positionWeight(t) > 0);
+    const members = basisIsActual() ? allTickers : held;   // actual needs no weights: it sums each position's own gain
+    const mine = {}, gap = {};
+    for (const [w] of PERF_WINDOWS) {
+      mine[w] = weightedReturn(members, w).value;
+      const m = benchReturn(market, w);
+      gap[w] = mine[w] != null && m != null ? mine[w] - m : null;
+    }
+    const rows = [
+      {label: `Your portfolio (${basisLabel()})`, title: basisIsActual() ? 'Rebuilt from your filled orders' : `Weighted by ${weightBasis()}`, vals: mine},
+      basisIsActual() && actualsData.income && Object.keys(actualsData.income).length
+        ? {label: '&nbsp;&nbsp;of which dividends', title: 'Dividends received, as a share of the money invested', vals: Object.fromEntries(PERF_WINDOWS.map(([w]) => [w, incomeShare(members, w)]))} : null,
+      market ? {label: `${esc(market.name)}`, title: `${market.symbol}`, vals: Object.fromEntries(PERF_WINDOWS.map(([w]) => [w, benchReturn(market, w)]))} : null,
+      market ? {label: 'Difference', vals: gap, fmt: pts} : null,
+    ].filter(Boolean);
+    return `<section class="grp-summary"><h2>Portfolio vs market</h2>
+      ${perfTable(rows, PERF_WINDOWS)}
+      <div class="grp-sub">${basisNote(held)}${market ? '' : ' Market data is not loaded yet; run an update to fetch it.'}</div></section>`;
+  }
+
+  // The sector benchmark sets side by side over the chosen window, with how far apart they are.
+  function sectorCompareHtml() {
+    const sets = Object.entries(sectorSets());
+    if (sets.length < 2) return '';
+    const w = settings.bench.window;
+    const names = [...new Set(sets.flatMap(([, v]) => Object.keys(v.sectors || {})))].sort();
+    const rows = names.map(name => {
+      const entries = sets.map(([, v]) => (v.sectors || {})[name]);
+      const vals = entries.map(e => rawBenchReturn(e, w));
+      const known = entries.filter(e => e && !e.suspect).map(e => rawBenchReturn(e, w)).filter(x => x != null);
+      const spread = known.length > 1 ? Math.max(...known) - Math.min(...known) : null;
+      return `<tr><td>${esc(name)}</td>${vals.map((x, i) => `<td class="num ${returnClass(x)}"${entries[i] && entries[i].suspect ? ' title="This index has an impossible one-day move, so it is treated as unreliable and not used"' : ''}>${formatReturn(x)}${entries[i] && entries[i].suspect ? ' ⚠' : ''}</td>`).join('')}<td class="num">${spread == null ? '—' : pts(spread).replace(/^\+/, '')}</td></tr>`;
+    }).join('');
+    const head = sets.map(([id, v]) => `<th class="num" title="${esc(v.label)}">${esc(v.label.replace(' sector', '').replace(' Select Sector', ''))}${id === settings.bench.set ? ' ✓' : ''}</th>`).join('');
+    return `<details class="grp-summary grp-compare"><summary>Compare sector benchmarks (${esc(w)})</summary>
+      <table class="orders-table grp-perf"><thead><tr><th>Sector</th>${head}<th class="num">Spread</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="grp-sub">Each column measures the same sector a different way; a wide spread means the choice of benchmark changes a holding's "ahead or behind" reading. ✓ marks the set in use; ⚠ marks an index whose data has an impossible one-day move, so it is not used and the spread ignores it. Window follows the vs Industry setting.</div></details>`;
+  }
+
+  function renderGroups() {
+    const body = document.getElementById('grp-body');
+    if (!body || !document.body.classList.contains('view-groups')) return;
+    const query = document.getElementById('grp-search').value.trim().toUpperCase();
+    const sort = document.getElementById('grp-sort').value;
+    const setSelect = document.getElementById('grp-sectorset'), sets = sectorSets();
+    setSelect.hidden = groupView !== 'sectors' || Object.keys(sets).length < 2;
+    if (!setSelect.hidden) {
+      setSelect.innerHTML = Object.entries(sets).map(([id, v]) => `<option value="${id}">${esc(v.label)}</option>`).join('');
+      setSelect.value = sets[settings.bench.set] ? settings.bench.set : benchmarks.default_sector_set;
+    }
+    const basisSelect = document.getElementById('grp-basis');
+    basisSelect.value = basisIsActual() ? 'actual' : 'held';
+    basisSelect.querySelector('option[value=actual]').disabled = !actualsData;
+    const bench = groupView === 'sectors' ? sectorBench() : benchmarks.industries;
+    const groups = new Map();
+    for (const t of allTickers) {
+      const key = groupKey(t);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(t);
+    }
+    const sortWindow = '1y';
+    let rows = [...groups].map(([name, members]) => {
+      const mine = {}, index = {}, gap = {};
+      for (const [w] of PERF_WINDOWS) {
+        mine[w] = weightedReturn(members, w).value;
+        index[w] = benchReturn((bench || {})[name], w);
+        gap[w] = mine[w] != null && index[w] != null ? mine[w] - index[w] : null;
+      }
+      return {name, members, mine, index, gap, hasIndex: index['1y'] != null || index['3m'] != null};
+    }).filter(g => !query || g.name.toUpperCase().includes(query) || g.members.some(t => t.ticker.includes(query) || (t.name || '').toUpperCase().includes(query)));
+    rows.sort((a, b) => {
+      if (sort === 'name') return a.name.localeCompare(b.name);
+      if (sort === 'count') return b.members.length - a.members.length || a.name.localeCompare(b.name);
+      const pick = g => (sort.startsWith('gap') ? g.gap[sortWindow] : g.mine[sortWindow]);
+      const x = pick(a), y = pick(b);
+      return (x == null) - (y == null) || (sort === 'gap-asc' ? (x ?? 0) - (y ?? 0) : (y ?? 0) - (x ?? 0)) || a.name.localeCompare(b.name);
+    });
+    const label = groupView === 'sectors' ? 'sector' : 'industry';
+    const cards = !rows.length ? '<div class="state-msg">No groups match.</div>' : `<div class="grp-grid">${rows.map(g => {
+      const ts = g.members.map(t => colormapT(t)).filter(v => v !== null);
+      const buy = ts.filter(v => v > 0.6).length, sell = ts.filter(v => v < 0.4).length, mid = ts.length - buy - sell;
+      const pct = n => ts.length ? (n / ts.length * 100).toFixed(1) : 0;
+      const ranked = g.members.filter(t => (t.returns || {})['1y'] != null).sort((a, b) => b.returns['1y'] - a.returns['1y']);
+      const best = ranked[0], worst = ranked[ranked.length - 1];
+      const sectors = groupView === 'industries' ? [...new Set(g.members.map(t => t.sector).filter(Boolean))] : [];
+      const note = groupView === 'sectors' ? (SECTOR_NOTES[g.name] || '') : (sectors.length ? `Part of ${sectors.join(', ')}.` : '');
+      const tableRows = [
+        g.hasIndex ? {label: groupView === 'sectors' && bench[g.name] ? `${String(bench[g.name].symbol).startsWith('^') ? 'Sector index' : 'Sector ETF'} (${esc(bench[g.name].symbol)})` : `${label[0].toUpperCase()}${label.slice(1)} index`, title: groupView === 'sectors' ? sectorSetLabel() : 'Yahoo Finance industry index', vals: g.index} : null,
+        {label: `Your holdings (${basisIsActual() ? 'actual' : 'if held'})`, title: basisIsActual() ? 'Rebuilt from your filled orders' : `Weighted by ${weightBasis()}`, vals: g.mine},
+        g.hasIndex ? {label: 'Difference', vals: g.gap, fmt: pts} : null,
+      ].filter(Boolean);
+      return `<article class="grp-card">
+        <h3>${esc(g.name)}</h3>
+        <div class="grp-sub">${g.members.length} ticker${g.members.length === 1 ? '' : 's'}${g.hasIndex ? '' : (bench[g.name] && bench[g.name].suspect ? ' · its index data looks unreliable (an impossible one-day move), so it is not used' : ' · no index available for this group')}</div>
+        ${note ? `<p class="grp-desc">${esc(note)}</p>` : ''}
+        ${perfTable(tableRows, PERF_WINDOWS.slice(0, 3))}
+        ${ts.length ? `<div class="grp-mix" title="Signal mix for the selected indicators"><span style="width:${pct(buy)}%;background:var(--green)"></span><span style="width:${pct(mid)}%;background:var(--muted-fg)"></span><span style="width:${pct(sell)}%;background:var(--red)"></span></div>
+        <div class="grp-mix-lbl">${buy} buy · ${mid} neutral · ${sell} sell</div>` : ''}
+        ${best && worst && best !== worst ? `<div class="grp-best">Best 1y: <strong>${esc(best.ticker)}</strong> ${formatReturn(best.returns['1y'])} · Worst: <strong>${esc(worst.ticker)}</strong> ${formatReturn(worst.returns['1y'])}</div>` : ''}
+        <div class="grp-members" aria-label="Tickers in this ${label}">${g.members.slice().sort((a, b) => a.ticker.localeCompare(b.ticker)).map(t =>
+          `<button type="button" ${t.detail_available ? '' : 'disabled'} title="${esc(t.name || t.ticker)}" onclick="openGroupTicker('${esc(t.ticker)}')">${esc(t.ticker)}</button>`).join('')}</div>
+      </article>`;
+    }).join('')}</div>`;
+    body.innerHTML = summaryStrip() + (groupView === 'sectors' ? sectorCompareHtml() : '') + cards;
+  }
+
+  async function openGroupTicker(ticker) {
+    await showView('signals');
+    const card = [...document.querySelectorAll('.ticker-card')].find(c => c.dataset.ticker === ticker && !c.disabled);
+    if (card) openTickerDetail(ticker, card);
   }
 
   async function initTemplates() {
@@ -3649,7 +4065,8 @@
 
   loadData().then(() => {
     startLive();
-    if (location.hash === '#templates') showView('templates');
+    const startView = location.hash.slice(1);
+    if (startView === 'templates' || GROUP_VIEWS.includes(startView)) showView(startView);
     const requestedRange = new URLSearchParams(window.location.search).get('range');
     if (IS_POPOUT && RANGES.includes(requestedRange)) detailRange = requestedRange;
     const requestedTicker = new URLSearchParams(window.location.search).get('ticker');
