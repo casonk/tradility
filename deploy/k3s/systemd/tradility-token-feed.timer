@@ -1,0 +1,12 @@
+[Unit]
+Description=Feed the tradility K3s refresh a Schwab access token before the weekday run
+
+[Timer]
+# The refresh runs at 16:30; a token lives about 30 minutes, so it is fed at 16:15 (and again at 16:25 in case
+# the first attempt failed).
+OnCalendar=Mon..Fri *-*-* 16:15:00
+OnCalendar=Mon..Fri *-*-* 16:25:00
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

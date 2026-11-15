@@ -1,0 +1,64 @@
+# The refresh the Clockwork timer ran: weekdays 16:30 in the host's zone (rendered by apply.sh, so the
+# schedule means the same wall-clock time as before).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tradility-refresh
+  namespace: tradility
+spec:
+  schedule: "30 16 * * 1-5"
+  timeZone: "__TZ__"
+  suspend: true                      # created suspended; deploy.sh unsuspends it after verify and the timer is off
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 1800
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0                # a failed refresh is reported, not retried against the market-data hosts
+      activeDeadlineSeconds: 1500
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels: {app: tradility-refresh}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000     # the owner's uid: the exports folder is theirs and mode 0700
+            runAsGroup: 1000
+            # No fsGroup: on a local volume it would recursively change the group of the real files.
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: refresh
+              image: localhost:5000/tradility:k3s
+              imagePullPolicy: Always
+              env:
+                - {name: TRADILITY_HOLDINGS_FILE, value: /holdings/holdings-aggregate.json}
+                - {name: TRADILITY_HISTORY_PERIOD, value: 5y}
+                - {name: TRADILITY_MARKET_SOURCE, value: auto}
+                # A short-lived Schwab access token, resolved on the host shortly before the run (the pod
+                # cannot reach the vault). Absent or expired, the run falls back to Yahoo and says so.
+                - name: TRADILITY_SCHWAB_ACCESS_TOKEN
+                  valueFrom:
+                    secretKeyRef: {name: tradility-schwab, key: access_token, optional: true}
+              resources:
+                requests: {cpu: 100m, memory: 256Mi}
+                limits: {memory: 1Gi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              volumeMounts:
+                - {name: exports, mountPath: /exports}
+                - {name: holdings, mountPath: /holdings, readOnly: true}
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: exports
+              persistentVolumeClaim: {claimName: exports}
+            - name: holdings
+              persistentVolumeClaim: {claimName: holdings, readOnly: true}
+            - name: tmp
+              emptyDir: {sizeLimit: 64Mi}
