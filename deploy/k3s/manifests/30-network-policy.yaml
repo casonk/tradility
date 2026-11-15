@@ -1,0 +1,42 @@
+# Default-deny for the refresh, then only the market-data and broker hosts it uses. Deny rules win over
+# allows in Cilium, so the explicit denies hold even if an allow is added later by mistake. Binance.US is
+# deliberately absent: its key stays on the host and the order fetch there is the only caller.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: tradility-egress
+  namespace: tradility
+spec:
+  endpointSelector:
+    matchLabels: {app: tradility-refresh}
+  ingressDeny:
+    - fromEntities: [all]
+  egressDeny:
+    - toEntities: [host, remote-node, kube-apiserver, health]
+    - toCIDR: ["169.254.0.0/16"]
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports: [{port: "53", protocol: ANY}]
+          rules:
+            dns:
+              - matchName: api.schwabapi.com
+              - matchName: query1.finance.yahoo.com
+              - matchName: query2.finance.yahoo.com
+              - matchName: finance.yahoo.com
+              - matchName: fc.yahoo.com
+              - matchName: consent.yahoo.com
+              - matchName: guce.yahoo.com
+    - toFQDNs:
+        - matchName: api.schwabapi.com
+        - matchName: query1.finance.yahoo.com
+        - matchName: query2.finance.yahoo.com
+        - matchName: finance.yahoo.com
+        - matchName: fc.yahoo.com
+        - matchName: consent.yahoo.com
+        - matchName: guce.yahoo.com
+      toPorts:
+        - ports: [{port: "443", protocol: TCP}]
