@@ -37,7 +37,12 @@ def web_client(tmp_path):
                             "low": [149 + i * 0.2 for i in range(60)],
                             "volume": [1000.0] * 60,
                         },
-                        "company_profile": {"available": True, "description": "Technology."},
+                        "company_profile": {
+                            "available": True,
+                            "description": "Technology.",
+                            "sector": "Technology",
+                            "industry": "Consumer Electronics",
+                        },
                     }
                 ],
             }
@@ -115,6 +120,10 @@ def test_standalone_page_assets_health_and_analysis_contract(web_client):
     listing = client.get("/api/tradility-analysis").get_json()
     assert listing["ok"] and listing["tickers"][0]["detail_available"] is True
     assert "price_history" not in listing["tickers"][0]
+    assert listing["tickers"][0]["sector"] == "Technology"
+    assert listing["tickers"][0]["industry"] == "Consumer Electronics"
+    assert listing["tickers"][0]["held_quantity"] == 2
+    assert b'id="tab-sectors"' in page.data and b'id="tab-industries"' in page.data
     detail = client.get("/api/tradility-analysis/aapl").get_json()["ticker"]
     assert detail["price_history"][0]["close"] == 200
     assert detail["company_profile"]["description"] == "Technology."

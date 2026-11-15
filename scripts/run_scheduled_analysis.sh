@@ -51,3 +51,29 @@ if [[ "${TRADILITY_FETCH_ORDERS:-1}" != "0" ]]; then
     --output "$orders_file" ||
     echo "tradility: order fetch reported a problem (analysis is unaffected)" >&2
 fi
+
+# Dividend and interest history (Schwab, read-only). Best effort like the orders: a failure keeps the
+# previous export and never fails the analysis.
+income_file="${TRADILITY_INCOME_FILE:-$repo_root/exports/tradility-income.json}"
+if [[ "${TRADILITY_FETCH_INCOME:-1}" != "0" ]]; then
+  flock --nonblock "$income_file.lock" \
+    "$python_bin" -m tradility.income \
+    --output "$income_file" ||
+    echo "tradility: income fetch reported a problem (analysis is unaffected)" >&2
+fi
+
+# Actual (trade-based) performance, rebuilt from the order history just fetched (plus the dividends
+# received, when the income export is there) and added to the analysis export. It takes the analysis
+# lock to rewrite it, and a failure is reported without failing the run: the page then simply
+# offers no "actual" basis.
+if [[ "${TRADILITY_FETCH_ORDERS:-1}" != "0" && -r "$orders_file" ]]; then
+  income_args=()
+  [[ -r "$income_file" ]] && income_args=(--income "$income_file")
+  flock --nonblock "$output_file.lock" \
+    "$python_bin" -m tradility.actuals \
+    --analysis "$output_file" \
+    --orders "$orders_file" \
+    --holdings "$holdings_file" \
+    "${income_args[@]}" ||
+    echo "tradility: actual-performance step reported a problem (analysis is unaffected)" >&2
+fi

@@ -71,6 +71,17 @@ def main() -> int:
         help="Concurrent company-profile requests (default: 4).",
     )
     parser.add_argument(
+        "--benchmark-cache",
+        default=None,
+        metavar="PATH",
+        help="Market/sector/industry benchmark cache (default: tradility-benchmark-cache.json beside output).",
+    )
+    parser.add_argument(
+        "--skip-benchmarks",
+        action="store_true",
+        help="Do not fetch market, sector and industry benchmark returns.",
+    )
+    parser.add_argument(
         "--skip-profiles",
         action="store_true",
         help="Do not fetch or attach qualitative company/fund profiles.",
@@ -97,6 +108,15 @@ def main() -> int:
         profile_cache_path=profile_cache_path,
         profile_max_age_days=args.profile_max_age_days,
         profile_workers=args.profile_workers,
+        benchmark_cache_path=(
+            None
+            if args.skip_benchmarks or args.skip_profiles
+            else (
+                Path(args.benchmark_cache).resolve()
+                if args.benchmark_cache
+                else output_path.with_name("tradility-benchmark-cache.json")
+            )
+        ),
     )
 
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

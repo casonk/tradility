@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 
+from tradility.benchmarks import load_benchmarks
 from tradility.fetch import OHLCVResult, fetch_ohlcv, normalize_history_period
 from tradility.fundamentals import fetch_schwab_fundamentals, record_fields
 from tradility.indicators import long_term_trend_signal, rsi, rsi_signal, sma, vwap, vwap_signal
@@ -63,6 +64,11 @@ def _period_return(close: pd.Series, offset: pd.DateOffset) -> float | None:
     if start in {None, 0} or end is None:
         return None
     return _safe_float((end - start) / start * 100, 2)
+
+
+def _return_windows(close: pd.Series) -> dict[str, float | None]:
+    """Performance over every standard window (1m ... 5y) for one price series."""
+    return {label: _period_return(close, offset) for label, offset in RETURN_WINDOWS.items()}
 
 
 def _chart_history(close: pd.Series) -> list[dict[str, str | float]]:
@@ -232,10 +238,7 @@ def _ticker_record(
             "period_start": period_start,
             "period_end": period_end,
             **indicators,
-            "returns": {
-                label: _period_return(df["Close"], offset)
-                for label, offset in RETURN_WINDOWS.items()
-            },
+            "returns": _return_windows(df["Close"]),
             "high_52w": high_52w,
             "low_52w": low_52w,
             "range_position_52w": range_position,
@@ -300,6 +303,7 @@ def analyze_tickers(
     profile_max_age_days: int = 30,
     profile_workers: int = 4,
     include_fundamentals: bool = True,
+    benchmark_cache_path: Path | None = None,
 ) -> dict[str, Any]:
     """Run full analysis pipeline.
 
@@ -358,6 +362,15 @@ def analyze_tickers(
             "errors": profile_result.errors,
         }
 
+    benchmarks: dict[str, Any] = {}
+    if benchmark_cache_path is not None and profiles:
+        benchmarks = load_benchmarks(
+            [p.get("sector", "") for p in profiles.values()],
+            [p.get("industry", "") for p in profiles.values()],
+            cache_path=benchmark_cache_path,
+            returns_fn=_return_windows,
+        )
+
     fundamentals: dict[str, dict[str, Any]] = {}
     fundamentals_summary: dict[str, Any] = {"enabled": False}
     # the same environment fallback the price fetch uses, so the scheduled run (which passes no flags) works
@@ -410,5 +423,6 @@ def analyze_tickers(
         "fetch_errors": err_count,
         "company_profiles": profile_summary,
         "fundamentals": fundamentals_summary,
+        "benchmarks": benchmarks,
         "tickers": records,
     }
