@@ -83,3 +83,21 @@ def test_auto_falls_back_without_a_token(monkeypatch):
 
     assert results["AAPL"].source == "yfinance"
     assert results["AAPL"].fallback_reason == "token unavailable"
+
+
+def test_clean_bars_drops_leftover_header_rows():
+    from tradility.fetch import _clean_bars
+
+    raw = pd.DataFrame(
+        {
+            "Open": ["Open", 1.0, 2.0],
+            "High": ["High", 2.0, 3.0],
+            "Low": ["Low", 0.5, 1.5],
+            "Close": ["Close", 1.5, 2.5],
+            "Volume": ["Volume", 10, 20],
+        },
+        index=["Date", "2026-11-12", "2026-11-13"],
+    )
+    df = _clean_bars(raw)
+    assert list(df["Close"]) == [1.5, 2.5]
+    assert df.index.is_monotonic_increasing
