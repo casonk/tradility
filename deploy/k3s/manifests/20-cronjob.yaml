@@ -1,14 +1,14 @@
-# The refresh the Clockwork timer ran: weekdays 16:30 in the host's zone (rendered by apply.sh, so the
-# schedule means the same wall-clock time as before).
+# The template for one refresh run. It is never scheduled: the host's weekday timer (with the job guard and resource
+# limits) triggers each run through deploy/k3s/run-job.sh, which creates a Job from this CronJob. The schedule below is
+# Feb 31st, which never occurs, and suspend stays true.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: tradility-refresh
   namespace: tradility
 spec:
-  schedule: "30 16 * * 1-5"
-  timeZone: "__TZ__"
-  suspend: true                      # created suspended; deploy.sh unsuspends it after verify and the timer is off
+  schedule: "0 0 31 2 *"
+  suspend: true                      # always suspended: only a template for run-job.sh
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 1800
   successfulJobsHistoryLimit: 3

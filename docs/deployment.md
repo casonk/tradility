@@ -7,7 +7,7 @@ want to run it, you need Python and nothing else.
 |---|---|---|
 | `dev` (default) | one run in the foreground, no systemd, no cluster | the language runtime |
 | `host` | the systemd user timer | systemd |
-| `k3s` | a CronJob in K3s, created suspended and started only after verification | K3s, podman, kubectl, the in-cluster registry |
+| `k3s` | the same host timer triggers the refresh, which runs in a pod | K3s, podman, kubectl, the in-cluster registry, and the host timer |
 
 The application code is the same in all three: nothing under `src/` knows which mode it is in.
 
@@ -37,10 +37,10 @@ An unknown value, or a config file that cannot be read, is an error, never a sil
 `up` enables the systemd user timer (install it once with Clockwork; `up` says so if it is missing). `down` disables it.
 
 ### k3s
-`up` refuses to start, and changes nothing, unless kubectl, podman and the in-cluster registry are present. Then it
-builds the image (refusing uncommitted source), applies the manifests (the CronJob is created **suspended**), runs
-`verify.sh` (which must pass), and only then disables the host timer and unsuspends the CronJob. A failed step
-changes nothing: the timer keeps running.
+`up` refuses to start, and changes nothing, unless kubectl, podman, the in-cluster registry and the host timer are
+present. Then it builds the image (refusing uncommitted source), applies the manifests (the CronJob is only a
+**suspended template**), runs `verify.sh` (which must pass), and only then switches the unit over: the timer is never
+disabled, and its `ExecStart` runs the pod. A failed step changes nothing: the unit keeps running on the host.
 
 ## Switching
 
@@ -48,7 +48,7 @@ changes nothing: the timer keeps running.
 |---|---|---|
 | dev | host | `deploy/deploy.sh --mode host up` |
 | host | k3s | `deploy/deploy.sh --mode k3s up` (verifies first, then hands over) |
-| k3s | host | `deploy/deploy.sh --mode host up` (suspends the CronJob, re-enables the timer) |
+| k3s | host | `deploy/deploy.sh --mode host up` (removes the drop-in; the unit runs on the host again) |
 
 `--mode k3s down` is the same as `--mode host up`. A marker in `~/.local/state/tradility/` records which mode last
 held the work, so `host up` knows what to stop first.
@@ -76,7 +76,9 @@ held the work, so `host up` knows what to stop first.
   the key nor a network path to the exchange. The order fetch there reports it and the analysis is unaffected.
 - **Network.** Egress is limited to the Schwab API and the Yahoo Finance hosts yfinance uses (see
   `deploy/k3s/manifests/30-network-policy.yaml`). Everything else, the host and the Kubernetes API are denied.
-- **Schedule.** The CronJob's `timeZone` is the host's, so weekdays 16:30 means the same wall-clock time as the
-  Clockwork timer.
+- **Schedule and guards.** The Clockwork timer (weekdays 16:30) stays the trigger, so the job guard and resource limits
+  still apply. k3s mode installs a drop-in (`99-k3s-run.conf`) that replaces only `ExecStart` with
+  `deploy/k3s/run-job.sh`, which runs one Job from the suspended CronJob template and exits with its status. The
+  token feeder (16:15 and 16:25) is installed and removed with it.
 - **What runs is what is committed.** The image is built from committed code only. Uncommitted changes in a checkout
   keep running on the host and in dev mode, but not in the pod, so commit before `--mode k3s up`.

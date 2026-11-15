@@ -21,15 +21,13 @@ for d in "$EXPORTS_DIR" "$HOLDINGS_DIR"; do
   ctx="$(stat -c %C "$d")"
   case "$ctx" in *container_file_t*) ;; *) echo "$d is labelled $ctx; run deploy/k3s/prepare-host.sh first"; exit 1 ;; esac
 done
-TZ_NAME="${TRADILITY_TZ:-$(timedatectl show -p Timezone --value 2>/dev/null || true)}"
-[ -n "$TZ_NAME" ] && [ -e "/usr/share/zoneinfo/$TZ_NAME" ] || { echo "cannot tell the host timezone; set TRADILITY_TZ, e.g. America/New_York"; exit 1; }
 NODE="$(kubectl get node -o jsonpath='{.items[0].metadata.name}')"
 
 kubectl apply -f "$HERE/manifests/00-namespace.yaml"
 sed -e "s#__EXPORTS_DIR__#$EXPORTS_DIR#g" -e "s#__HOLDINGS_DIR__#$HOLDINGS_DIR#g" -e "s#__NODE__#$NODE#g" \
   "$HERE/manifests/10-volumes.yaml.tmpl" | kubectl apply -f -
 kubectl apply -f "$HERE/manifests/30-network-policy.yaml"
-sed "s#__TZ__#$TZ_NAME#g" "$HERE/manifests/20-cronjob.yaml" | kubectl apply -f -
+kubectl apply -f "$HERE/manifests/20-cronjob.yaml"
 # A first token so a manual run works at once; feed-token.sh install keeps it fresh on trading days.
 "$HERE/feed-token.sh" feed || echo "note: no Schwab token yet; a run falls back to Yahoo until feed-token.sh succeeds"
 echo "Deployed (the CronJob is suspended). Run it now with: kubectl -n tradility create job --from=cronjob/tradility-refresh refresh-now"
