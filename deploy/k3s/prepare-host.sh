@@ -9,7 +9,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 ENV_FILE="${TRADILITY_ENV_FILE:-$HOME/.config/tradility/scheduled.env}"
 EXPORTS_DIR="${TRADILITY_EXPORTS_DIR:-$REPO/exports}"
-HOLDINGS_FILE="${TRADILITY_HOLDINGS_FILE:-$(python3 -I "$HERE/env_value.py" "$ENV_FILE" TRADILITY_HOLDINGS_FILE)}"
+HOLDINGS_FILE="${TRADILITY_HOLDINGS_FILE:-$(python3 -I "$HERE/env_value.py" "$ENV_FILE" TRADILITY_HOLDINGS_FILE | sed "s/^[^=]*=//")}"
 [ -n "$HOLDINGS_FILE" ] || { echo "TRADILITY_HOLDINGS_FILE is not set (export it, or put it in $ENV_FILE)"; exit 1; }
 HOLDINGS_DIR="$(dirname "$HOLDINGS_FILE")"
 for d in "$EXPORTS_DIR" "$HOLDINGS_DIR"; do

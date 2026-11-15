@@ -14,7 +14,7 @@ UNIT=tradility-token-feed
 
 case "${1:-feed}" in
   feed)
-    PY="${TRADILITY_PYTHON:-$(python3 -I "$HERE/env_value.py" "$ENV_FILE" TRADILITY_PYTHON)}"
+    PY="${TRADILITY_PYTHON:-$(python3 -I "$HERE/env_value.py" "$ENV_FILE" TRADILITY_PYTHON | sed "s/^[^=]*=//")}"
     PY="${PY:-python3}"
     DIR="$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/tradility-token.XXXXXX")"; chmod 700 "$DIR"
     trap 'rm -rf "$DIR"' EXIT

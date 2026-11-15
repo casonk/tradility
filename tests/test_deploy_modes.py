@@ -363,3 +363,11 @@ def test_token_helper_never_prints_the_token(tmp_path):
     assert "s3cr3t" not in done.stdout + done.stderr
     assert out.read_text() == "s3cr3t-token-value"
     assert oct(out.stat().st_mode & 0o777) == "0o600"
+
+
+def test_pods_ask_for_the_real_hostname_first():
+    # curl's resolver (c-ares, used by yfinance) gives up when the egress policy refuses the first
+    # search-domain variant of a name; without ndots 1 every Yahoo request failed with a DNS error.
+    for name in ("20-cronjob.yaml", "verify-pod.yaml"):
+        text = (REPO / "deploy" / "k3s" / "manifests" / name).read_text()
+        assert 'name: ndots, value: "1"' in text, name

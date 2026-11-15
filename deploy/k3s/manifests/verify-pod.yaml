@@ -10,6 +10,11 @@ spec:
   terminationGracePeriodSeconds: 0   # its sleep ignores SIGTERM; die at once so the next run can reuse the name
   automountServiceAccountToken: false
   enableServiceLinks: false
+  # curl's resolver (c-ares, used by yfinance) gives up when the egress policy refuses the first
+  # search-domain variant of a name (host.tradility.svc.cluster.local); with ndots 1 it asks for the
+  # real name first, as glibc effectively does.
+  dnsConfig:
+    options: [{name: ndots, value: "1"}]
   activeDeadlineSeconds: 600
   securityContext:
     runAsNonRoot: true

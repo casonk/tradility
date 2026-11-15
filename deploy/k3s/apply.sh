@@ -8,7 +8,7 @@ REPO="$(cd "$HERE/../.." && pwd)"
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/k3s.yaml}"
 ENV_FILE="${TRADILITY_ENV_FILE:-$HOME/.config/tradility/scheduled.env}"
 EXPORTS_DIR="${TRADILITY_EXPORTS_DIR:-$REPO/exports}"
-HOLDINGS_FILE="${TRADILITY_HOLDINGS_FILE:-$(python3 -I "$HERE/env_value.py" "$ENV_FILE" TRADILITY_HOLDINGS_FILE)}"
+HOLDINGS_FILE="${TRADILITY_HOLDINGS_FILE:-$(python3 -I "$HERE/env_value.py" "$ENV_FILE" TRADILITY_HOLDINGS_FILE | sed "s/^[^=]*=//")}"
 
 kubectl wait --for=condition=Ready node --all --timeout=60s
 kubectl get crd ciliumnetworkpolicies.cilium.io >/dev/null
