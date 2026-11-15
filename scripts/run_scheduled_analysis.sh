@@ -66,7 +66,9 @@ fi
 # received, when the income export is there) and added to the analysis export. It takes the analysis
 # lock to rewrite it, and a failure is reported without failing the run: the page then simply
 # offers no "actual" basis.
-if [[ "${TRADILITY_FETCH_ORDERS:-1}" != "0" && -r "$orders_file" ]]; then
+# TRADILITY_FETCH_ACTUALS follows TRADILITY_FETCH_ORDERS unless set: a run that must not fetch orders itself (the
+# K3s pod has no broker credentials; the host's orders timer keeps the file) can still rebuild the actuals.
+if [[ "${TRADILITY_FETCH_ACTUALS:-${TRADILITY_FETCH_ORDERS:-1}}" != "0" && -r "$orders_file" ]]; then
   income_args=()
   [[ -r "$income_file" ]] && income_args=(--income "$income_file")
   flock --nonblock "$output_file.lock" \
