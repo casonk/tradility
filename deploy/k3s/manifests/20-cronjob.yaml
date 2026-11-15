@@ -44,6 +44,10 @@ spec:
                 - {name: TRADILITY_HOLDINGS_FILE, value: /holdings/holdings-aggregate.json}
                 - {name: TRADILITY_HISTORY_PERIOD, value: 5y}
                 - {name: TRADILITY_MARKET_SOURCE, value: auto}
+                # The pod has no broker credentials, so it does not fetch orders: the host's tradility-orders
+                # timer keeps that file, and the pod rebuilds the actual-performance view from it.
+                - {name: TRADILITY_FETCH_ORDERS, value: "0"}
+                - {name: TRADILITY_FETCH_ACTUALS, value: "1"}
                 # A short-lived Schwab access token, resolved on the host shortly before the run (the pod
                 # cannot reach the vault). Absent or expired, the run falls back to Yahoo and says so.
                 - name: TRADILITY_SCHWAB_ACCESS_TOKEN
