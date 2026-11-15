@@ -36,6 +36,9 @@ src/tradility/
   fetch.py          — yfinance OHLCV download wrapper
   indicators.py     — RSI and VWAP calculations
   analyze.py        — orchestration: load → fetch → compute → serialize
+  benchmarks.py     — market / sector / industry benchmark returns (Vanguard ETFs, Yahoo industry indexes)
+  actuals.py        — actual (trade-based) performance rebuilt from the order history
+  income.py         — Schwab dividend/interest history and name-based attribution to holdings
   web.py            — standalone loopback web application and domain APIs
   web_state.py      — owner-only manual order state and broker-export merge
   templates/        — packaged Tradility dashboard
