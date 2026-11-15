@@ -131,6 +131,19 @@ def normalize_history_period(value: str) -> str:
     return period
 
 
+def _clean_bars(raw: Any) -> pd.DataFrame:
+    """Numeric, date-indexed, sorted bars; rows that are not real bars are dropped.
+
+    yfinance has returned frames with leftover header rows ("Close", "Ticker", ...) inside the data,
+    which made every later float() call fail and took the whole run down. Such rows have no numeric
+    close, so they are removed here instead of reaching the analysis.
+    """
+    df = raw.copy().apply(pd.to_numeric, errors="coerce")
+    df.index = pd.to_datetime(df.index, errors="coerce")
+    df = df[df.index.notna() & df["Close"].notna()]
+    return df.sort_index()
+
+
 def _fetch_yfinance_ohlcv(
     tickers: list[str],
     history_period: str,
@@ -154,9 +167,10 @@ def _fetch_yfinance_ohlcv(
             # Flatten multi-level columns that yfinance may produce
             if isinstance(raw.columns, pd.MultiIndex):
                 raw.columns = raw.columns.get_level_values(0)
-            df = raw[["Open", "High", "Low", "Close", "Volume"]].copy()
-            df.index = pd.to_datetime(df.index)
-            df = df.sort_index()
+            df = _clean_bars(raw[["Open", "High", "Low", "Close", "Volume"]])
+            if df.empty:
+                results[t] = OHLCVResult(ticker=t, error="no usable bars", source="yfinance")
+                continue
             results[t] = OHLCVResult(ticker=t, df=df, source="yfinance")
         except Exception as exc:
             results[t] = OHLCVResult(ticker=t, error=str(exc), source="yfinance")
