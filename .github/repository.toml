@@ -4,6 +4,7 @@
 [repository]
 # One line shown on GitHub. Keep it free of private repository names and local paths.
 description = "Technical analytics (RSI, VWAP) on investment holdings and watchlists via yfinance; JSON output"
+topics = ["technical-analysis", "rsi", "vwap", "finance", "yfinance", "python", "investing", "k3s"]
 
 [main_branch]
 # Direct commits and pushes to main are refused unless this is true.
