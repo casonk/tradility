@@ -77,8 +77,10 @@ held the work, so `host up` knows what to stop first.
 - **Network.** Egress is limited to the Schwab API and the Yahoo Finance hosts yfinance uses (see
   `deploy/k3s/manifests/30-network-policy.yaml`). Everything else, the host and the Kubernetes API are denied.
 - **Schedule and guards.** The Clockwork timer (weekdays 16:30) stays the trigger, so the job guard and resource limits
-  still apply. k3s mode installs a drop-in (`99-k3s-run.conf`) that replaces only `ExecStart` with
+  still apply. k3s mode installs a drop-in (`zz-k3s-run.conf`) that replaces only `ExecStart` with
   `deploy/k3s/run-job.sh`, which runs one Job from the suspended CronJob template and exits with its status. The
-  token feeder (16:15 and 16:25) is installed and removed with it.
+  token feeder (16:15 and 16:25) is installed and removed with it. The drop-in is named `zz-` so it sorts after this unit's
+  own `local.conf`, which also sets `ExecStart`; `handover.sh pod-on` checks the effective `ExecStart` and undoes the
+  drop-in if another one still wins.
 - **What runs is what is committed.** The image is built from committed code only. Uncommitted changes in a checkout
   keep running on the host and in dev mode, but not in the pod, so commit before `--mode k3s up`.

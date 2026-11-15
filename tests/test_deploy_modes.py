@@ -406,7 +406,7 @@ def test_the_cronjob_is_only_a_template_that_never_schedules_itself():
 
 def test_the_dropin_replaces_only_execstart():
     # The job guard, the resource arbiter, the time limit and any post-step live in other drop-ins and must keep applying.
-    text = (REPO / "deploy" / "k3s" / "systemd" / "99-k3s-run.conf").read_text()
+    text = (REPO / "deploy" / "k3s" / "systemd" / "zz-k3s-run.conf").read_text()
     body = [line for line in text.splitlines() if line and not line.startswith("#")]
     keys = {line.split("=", 1)[0] for line in body if "=" in line}
     assert keys <= {"Environment", "ExecStart"}, keys
@@ -416,10 +416,13 @@ def test_the_dropin_replaces_only_execstart():
 
 
 def test_handover_installs_and_removes_the_dropin(tmp_path):
-    for name in ("kubectl", "systemctl"):
+    for name, body in (
+        ("kubectl", "exit 0"),
+        ("systemctl", 'case "$*" in *" show "*) echo "ExecStart=run-job.sh" ;; esac'),
+    ):
         stub = tmp_path / "bin" / name
         stub.parent.mkdir(exist_ok=True)
-        stub.write_text("#!/bin/sh\nexit 0\n")
+        stub.write_text(f"#!/bin/sh\n{body}\n")
         stub.chmod(0o755)
     env = {
         **os.environ,
@@ -428,7 +431,7 @@ def test_handover_installs_and_removes_the_dropin(tmp_path):
     }
     script = str(REPO / "deploy" / "k3s" / "handover.sh")
     dropin = (
-        tmp_path / "cfg" / "systemd" / "user" / "tradility-refresh.service.d" / "99-k3s-run.conf"
+        tmp_path / "cfg" / "systemd" / "user" / "tradility-refresh.service.d" / "zz-k3s-run.conf"
     )
     subprocess.run(["bash", script, "pod-on"], env=env, check=True)
     text = dropin.read_text()
@@ -456,3 +459,34 @@ def test_run_job_reports_the_jobs_status(tmp_path):
     )
     assert done.returncode == 1 and "failed" in done.stderr
     assert "create job" in log.read_text()
+
+
+def test_handover_undoes_the_dropin_when_another_dropin_wins(tmp_path):
+    # A unit's own local.conf set ExecStart and sorted after the trigger drop-in, so the host script kept running.
+    for name, body in (
+        ("kubectl", "exit 0"),
+        (
+            "systemctl",
+            'case "$*" in *" show "*) echo "ExecStart=/usr/bin/env bash other.sh" ;; esac',
+        ),
+    ):
+        stub = tmp_path / "bin" / name
+        stub.parent.mkdir(exist_ok=True)
+        stub.write_text(f"#!/bin/sh\n{body}\n")
+        stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+        "XDG_CONFIG_HOME": str(tmp_path / "cfg"),
+    }
+    done = subprocess.run(
+        ["bash", str(REPO / "deploy" / "k3s" / "handover.sh"), "pod-on"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    dropin = (
+        tmp_path / "cfg" / "systemd" / "user" / "tradility-refresh.service.d" / "zz-k3s-run.conf"
+    )
+    assert done.returncode == 1 and "another drop-in" in done.stderr
+    assert not dropin.exists()
