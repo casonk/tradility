@@ -17,6 +17,13 @@ exchange, employee count, provider provenance, and retrieval time. Tradility
 does not synthesize a mission or vision statement; that field remains empty
 unless a future source supplies an explicitly company-authored statement.
 
+## Ways to run it
+
+One command, one setting: `deploy/deploy.sh up`. The mode is `dev` (the default, no cluster), `host` (systemd) or
+`k3s` (K3s, optional). Only `k3s` needs a cluster, and switching never moves your data. Choose with `--mode`,
+`config/deploy.example.env` copied to `config/deploy.local.env`, or the environment. Full guide:
+[`docs/deployment.md`](docs/deployment.md).
+
 ## Prerequisites
 
 - Python 3.10+

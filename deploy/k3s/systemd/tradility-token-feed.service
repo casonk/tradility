@@ -1,0 +1,6 @@
+[Unit]
+Description=Feed the tradility K3s refresh a fresh Schwab access token
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash __REPO__/deploy/k3s/feed-token.sh feed

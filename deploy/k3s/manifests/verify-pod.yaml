@@ -1,0 +1,43 @@
+# A short-lived pod with the refresh's labels, volumes and security context, for verify.sh only.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tradility-verify
+  namespace: tradility
+  labels: {app: tradility-refresh}
+spec:
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 0   # its sleep ignores SIGTERM; die at once so the next run can reuse the name
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  # curl's resolver (c-ares, used by yfinance) gives up when the egress policy refuses the first
+  # search-domain variant of a name (host.tradility.svc.cluster.local); with ndots 1 it asks for the
+  # real name first, as glibc effectively does.
+  dnsConfig:
+    options: [{name: ndots, value: "1"}]
+  activeDeadlineSeconds: 600
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    seccompProfile: {type: RuntimeDefault}
+  containers:
+    - name: verify
+      image: localhost:5000/tradility:k3s
+      imagePullPolicy: Always
+      command: ["sleep", "600"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: {drop: [ALL]}
+      volumeMounts:
+        - {name: exports, mountPath: /exports}
+        - {name: holdings, mountPath: /holdings, readOnly: true}
+        - {name: tmp, mountPath: /tmp}
+  volumes:
+    - name: exports
+      persistentVolumeClaim: {claimName: exports}
+    - name: holdings
+      persistentVolumeClaim: {claimName: holdings, readOnly: true}
+    - name: tmp
+      emptyDir: {sizeLimit: 16Mi}

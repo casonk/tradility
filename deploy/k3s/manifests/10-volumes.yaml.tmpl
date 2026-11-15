@@ -1,0 +1,57 @@
+# The host's tradility exports folder (read-write: the analysis and its caches) and the finance pipeline's
+# holdings folder (read-only: the pod can never change the books). Rendered by apply.sh, which fills the
+# machine-specific paths and node name, so no path or hostname is committed. Retain: deleting a claim never
+# deletes the data.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: tradility-exports
+spec:
+  capacity: {storage: 1Gi}
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-host
+  volumeMode: Filesystem
+  claimRef: {namespace: tradility, name: exports}
+  local: {path: "__EXPORTS_DIR__"}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - {key: kubernetes.io/hostname, operator: In, values: ["__NODE__"]}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: tradility-holdings
+spec:
+  capacity: {storage: 100Mi}
+  accessModes: [ReadOnlyMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-host
+  volumeMode: Filesystem
+  claimRef: {namespace: tradility, name: holdings}
+  local: {path: "__HOLDINGS_DIR__"}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - {key: kubernetes.io/hostname, operator: In, values: ["__NODE__"]}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: exports, namespace: tradility}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-host
+  volumeName: tradility-exports
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: holdings, namespace: tradility}
+spec:
+  accessModes: [ReadOnlyMany]
+  storageClassName: local-host
+  volumeName: tradility-holdings
+  resources: {requests: {storage: 100Mi}}

@@ -1,0 +1,15 @@
+# The tradility refresh image: the package and its scheduled-analysis script, nothing from the owner's
+# configuration or data. The owner's uid runs it because the mounted exports folder is theirs and mode 0700;
+# no fsGroup anywhere. A read-only root filesystem works: everything writable is a mount (/exports, /tmp).
+FROM docker.io/library/python:3.12-slim
+WORKDIR /app
+COPY pyproject.toml README.md /app/
+COPY src /app/src
+COPY scripts /app/scripts
+# `exports` is where the script defaults every cache and output to; pointing it at the mount keeps those
+# defaults working on a read-only root.
+RUN pip install --no-cache-dir . && ln -s /exports /app/exports
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOME=/tmp XDG_CACHE_HOME=/tmp/cache XDG_STATE_HOME=/tmp/state \
+    TRADILITY_PYTHON=/usr/local/bin/python
+USER 1000:1000
+ENTRYPOINT ["bash", "/app/scripts/run_scheduled_analysis.sh"]
