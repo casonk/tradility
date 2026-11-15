@@ -60,3 +60,16 @@ Unlike `CHATHISTORY.md`, this file should keep only reusable lessons that should
   the policy lets single orders go with a click, is re-checked against the current price before the first order
   is sent, and stops at the first rung that fails so it never leaves unexpected gaps. Every rung still obeys the
   per-order cap and price band, and the whole must fit in the daily total.
+
+### 2026-11-15 — The scheduled refresh in K3s: what broke and what it taught
+
+- A job whose every source can fail must never write "nothing" over an existing export. The order step replaced the
+  order history with an empty file when no broker was reachable; it now keeps the previous export, and the K3s pod does
+  not fetch orders at all (the host timer that holds the credentials owns that file).
+- Never prove a job against live outputs it can overwrite. Use a scratch copy of the data folders for a trial run.
+- curl's resolver (behind yfinance) gives up when the egress policy refuses the first search-domain lookup. Pods that
+  use it need `ndots: 1` so the real hostname is asked first.
+- yfinance can return leftover header rows inside the bars; coerce to numbers and drop rows with no close instead of
+  letting one ticker fail the whole run.
+- A trigger drop-in named `99-` still lost to the unit's own `local.conf`. Name it `zz-` and verify the effective
+  `ExecStart` after installing it.
