@@ -73,3 +73,14 @@ Unlike `CHATHISTORY.md`, this file should keep only reusable lessons that should
   letting one ticker fail the whole run.
 - A trigger drop-in named `99-` still lost to the unit's own `local.conf`. Name it `zz-` and verify the effective
   `ExecStart` after installing it.
+
+### 2026-11-20 — The K3s refresh runs a baked image, and a wait must not start with a side channel
+
+- The scheduled refresh runs the image built by `deploy/k3s/build-image.sh`, not the checkout. Merged code takes effect
+  only after rebuilding the image; for a manual run also `feed-token.sh feed`, then create a Job from
+  `cronjob/tradility-refresh`. Check the export (for example its `dividend_adjustment` block) rather than the merge.
+- `run-job.sh` started its deadline when `kubectl logs -f` returned, and that call can fail at once (inotify limit), so
+  a refresh that needs about five minutes was deleted mid-run. Measure a deadline from the thing it bounds, never from a
+  convenience call, and test with that call failing.
+- A killed pod can leave the shared `flock` held for a moment: the next job exited in under a second with no output.
+  A silent instant exit from a `flock --nonblock` wrapper means the lock; retry after the old pod is gone.
