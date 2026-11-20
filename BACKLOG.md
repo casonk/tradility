@@ -138,4 +138,5 @@
 
 ## Pending
 
+- [ ] [codecov:2026-11-20] **Raise patch coverage on PR #91: 85.7143% patched, 2 changed lines have no test coverage.** Files: src/tradility/profiles.py (1 missing, 80%), src/tradility/web.py (1 missing, 0%). Add tests for the uncovered lines. (codecov-pr:91, https://github.com/casonk/tradility/pull/91#issuecomment-7048949453)
 - [ ] [codecov:2026-11-20] **Raise patch coverage on PR #86: 84.8214% patched, 17 changed lines have no test coverage.** Files: src/tradility/dividends.py (13 missing, 85.05%), src/tradility/cli.py (2 missing, 0%), src/tradility/analyze.py (1 missing, 75%), src/tradility/fetch.py (1 missing, 94.73%). Add tests for the uncovered lines. (codecov-pr:86, https://github.com/casonk/tradility/pull/86#issuecomment-7037892369)
