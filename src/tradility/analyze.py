@@ -198,6 +198,7 @@ def _ticker_record(
         "name": meta.get("name", ""),
         "asset_class": meta.get("asset_class", ""),
         "data_source": result.source or "unknown",
+        "dividend_adjusted": result.dividend_adjusted,
     }
     if profile:
         base["company_profile"] = profile
@@ -248,6 +249,8 @@ def _ticker_record(
     )
     if result.fallback_reason:
         base["fallback_reason"] = result.fallback_reason
+    if result.adjustment_note:
+        base["adjustment_note"] = result.adjustment_note
     return base
 
 
@@ -304,6 +307,7 @@ def analyze_tickers(
     profile_workers: int = 4,
     include_fundamentals: bool = True,
     benchmark_cache_path: Path | None = None,
+    dividend_cache_path: Path | None = None,
 ) -> dict[str, Any]:
     """Run full analysis pipeline.
 
@@ -333,6 +337,7 @@ def analyze_tickers(
         schwab_tickers=schwab_tickers,
         schwab_access_token=schwab_access_token,
         schwab_token_command=schwab_token_command,
+        dividend_cache_path=dividend_cache_path,
     )
 
     profiles: dict[str, dict[str, Any]] = {}
@@ -408,6 +413,15 @@ def analyze_tickers(
         data_source = str(record.get("data_source", "unknown"))
         source_counts[data_source] = source_counts.get(data_source, 0) + 1
 
+    schwab_rows = [
+        r for r in records if r.get("data_source") == "schwab" and r.get("fetch_status") == "ok"
+    ]
+    dividend_adjustment = {
+        "enabled": dividend_cache_path is not None,
+        "schwab_adjusted": sum(1 for r in schwab_rows if r.get("dividend_adjusted")),
+        "schwab_raw": sum(1 for r in schwab_rows if not r.get("dividend_adjusted")),
+    }
+
     return {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "history_period": resolved_period,
@@ -418,6 +432,7 @@ def analyze_tickers(
         "requested_source": source,
         "data_source": next(iter(source_counts)) if len(source_counts) == 1 else "mixed",
         "data_sources": source_counts,
+        "dividend_adjustment": dividend_adjustment,
         "ticker_count": len(records),
         "fetch_ok": ok_count,
         "fetch_errors": err_count,
