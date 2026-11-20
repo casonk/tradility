@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -60,7 +60,7 @@ def test_unusable_dividends_are_ignored():
     assert adjust_for_dividends(df.iloc[0:0], [("2026-01-02", 1.0)]).empty
 
 
-NOW = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 20, 12, 0, tzinfo=UTC)
 
 
 def test_dividend_history_is_cached_for_a_day(tmp_path):

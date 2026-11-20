@@ -11,7 +11,7 @@ jobs:
   ci:
     uses: casonk/.github/.github/workflows/python-ci.yml@main
     with:
-      python-versions: '["3.10", "3.12"]'
+      python-versions: auto-edges
       coverage: true
       coverage-source: tradility
     secrets:

@@ -7,7 +7,7 @@ import os
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -57,7 +57,7 @@ def normalize_yfinance_profile(
     retrieved_at: datetime | None = None,
 ) -> dict[str, Any]:
     """Map unstable provider keys into Tradility's small profile contract."""
-    retrieved = (retrieved_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    retrieved = (retrieved_at or datetime.now(UTC)).astimezone(UTC)
     city = _text(raw.get("city"), limit=200)
     state = _text(raw.get("state"), limit=200)
     country = _text(raw.get("country"), limit=200)
@@ -96,8 +96,8 @@ def _parse_time(value: Any) -> datetime | None:
     except (TypeError, ValueError):
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _load_cache(path: Path) -> dict[str, dict[str, Any]]:
@@ -148,7 +148,7 @@ def load_company_profiles(
         raise ValueError("profile workers must be positive")
 
     requested = sorted({ticker.strip().upper() for ticker in tickers if ticker.strip()})
-    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    current = (now or datetime.now(UTC)).astimezone(UTC)
     cutoff = current - timedelta(days=max_age_days)
     cache = _load_cache(cache_path)
     selected: dict[str, dict[str, Any]] = {}

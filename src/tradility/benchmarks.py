@@ -15,7 +15,7 @@ import json
 import re
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -89,7 +89,7 @@ def _history(symbol: str) -> pd.Series:
 
 
 def _stamp(now: datetime) -> str:
-    return now.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return now.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _fresh(entry: dict[str, Any], now: datetime, max_age: timedelta) -> bool:
@@ -128,7 +128,7 @@ def load_benchmarks(
     A benchmark that cannot be fetched is left out (and counted in ``summary.errors``)
     rather than failing the run; a stale cached value is reused in its place.
     """
-    stamp_now = now or datetime.now(timezone.utc)
+    stamp_now = now or datetime.now(UTC)
     max_age = timedelta(hours=max_age_hours)
     cache = _load_cache(cache_path)
     wanted: dict[str, tuple[str, str, str]] = {"market": ("market", MARKET_NAME, MARKET_SYMBOL)}
