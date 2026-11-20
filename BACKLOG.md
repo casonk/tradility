@@ -135,3 +135,7 @@
 - [x] **Multi-year trend baseline** — the default horizon is five years and
   each successful ticker includes 50/200-day simple moving averages plus a
   combined long-term trend signal alongside RSI and VWAP.
+
+## Pending
+
+- [ ] [codecov:2026-11-20] **Raise patch coverage on PR #86: 84.8214% patched, 17 changed lines have no test coverage.** Files: src/tradility/dividends.py (13 missing, 85.05%), src/tradility/cli.py (2 missing, 0%), src/tradility/analyze.py (1 missing, 75%), src/tradility/fetch.py (1 missing, 94.73%). Add tests for the uncovered lines. (codecov-pr:86, https://github.com/casonk/tradility/pull/86#issuecomment-7037892369)
