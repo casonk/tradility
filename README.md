@@ -106,6 +106,12 @@ this avoids duplicating secrets or refresh-token state in a public analytics
 package. Use `--source schwab` to fail closed when Schwab is unavailable, or
 `--source yfinance` for an explicit Yahoo-only run.
 
+Schwab's price history is a raw close, so Tradility dividend-adjusts it with each ticker's Yahoo
+dividend history (cached for a day in `tradility-dividend-cache.json` beside the output). Returns
+are then total returns, like the yfinance bars and the benchmark ETFs. A ticker whose dividends
+cannot be fetched stays raw and is marked `dividend_adjusted: false`; `--raw-prices` turns the
+adjustment off.
+
 ## Output Format
 
 `tradility-analysis.json` contains a top-level metadata block and a `tickers` array:
