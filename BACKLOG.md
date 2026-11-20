@@ -7,7 +7,7 @@
   ended a session behind (Yahoo-sourced ones did not) and the chart skips that day
   until the next run. Add a later refresh, or fill the last bar from Yahoo.
 - [ ] [manual:2026-11-05] **Refresh the holdings aggregate on a schedule** — the ticker
-  list comes from finance-repo's `holdings-aggregate.json`, rebuilt only by its
+  list comes from the finance repo's `holdings-aggregate.json`, rebuilt only by its
   own job (last 2026-11-04 16:11 ET), so new positions and fills do not appear until
   then.
 - [ ] [manual:2026-11-05] **Move fundamentals with the live price** — valuation ratios
