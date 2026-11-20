@@ -461,6 +461,34 @@ def test_run_job_reports_the_jobs_status(tmp_path):
     assert "create job" in log.read_text()
 
 
+def _run_job(tmp_path, status_reply, wait):
+    kubectl = tmp_path / "bin" / "kubectl"
+    kubectl.parent.mkdir()
+    # `logs` fails at once, as it does on a host out of inotify watches; the job's status is what counts.
+    kubectl.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in *" logs "*) exit 1 ;; esac\n'
+        f'case "$*" in *"jsonpath={{.status.succeeded}}"*) echo "{status_reply}" ;; esac\n'
+    )
+    kubectl.chmod(0o755)
+    env = {**os.environ, "KUBECTL": str(kubectl), "KUBECONFIG": "/x", "JOB_WAIT": str(wait)}
+    return subprocess.run(
+        ["bash", str(REPO / "deploy" / "k3s" / "run-job.sh")],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_run_job_waits_for_the_job_even_when_log_following_fails(tmp_path):
+    assert _run_job(tmp_path, 1, 60).returncode == 0
+
+
+def test_run_job_gives_up_after_the_wait(tmp_path):
+    done = _run_job(tmp_path, "", 0)
+    assert done.returncode == 1 and "did not finish" in done.stderr
+
+
 def test_handover_undoes_the_dropin_when_another_dropin_wins(tmp_path):
     # A unit's own local.conf set ExecStart and sorted after the trigger drop-in, so the host script kept running.
     for name, body in (
