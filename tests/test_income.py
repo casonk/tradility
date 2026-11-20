@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from tradility.income import attribute, collect, kind_of, match_ticker, name_tokens, schwab_income
 
@@ -87,5 +87,5 @@ def test_attribute_uses_a_symbol_when_given_and_leaves_interest_alone():
 
 
 def test_collect_reports_a_missing_credential_without_rows():
-    out = collect(env={}, now=datetime(2026, 11, 9, tzinfo=timezone.utc))
+    out = collect(env={}, now=datetime(2026, 11, 9, tzinfo=UTC))
     assert out["sources"]["schwab"]["ok"] is False and out["income"] == []
