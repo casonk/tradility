@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1, user-scalable=yes">
-  <title>Tradility</title>
+  <title>{% if embedded %}Tradility — Clockwork{% else %}Tradility{% endif %}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -30,9 +30,13 @@
       top: 0;
       z-index: 100;
     }
+    {% if embedded %}
+    .header-title { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; flex: 1; }
+    {% else %}
     .header-title { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; color: inherit; text-decoration: none; }
     .header-sub { font-size: 11px; color: var(--muted-fg); flex: 1; }
     @media (max-width: 560px) { .header-sub { display: none; } .header-title { flex: 1; } }
+    {% endif %}
     .header-meta { font-size: 11px; color: var(--muted-fg); white-space: nowrap; }
     .header-meta.stale { color: var(--red); font-weight: 700; }
 
@@ -380,6 +384,7 @@
     body.popout-chart .detail-chart-wrap { height: calc(100vh - 250px); min-height: 280px; }
     .detail-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(240px, 1fr); gap: 16px; align-items: start; }
     .detail-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 11px; padding: 14px; }
+    {% if not embedded %}
     /* every card collapses to its title; the choice is remembered (see initCollapsibleCards) */
     .cc-title { cursor: pointer; user-select: none; }
     .cc-title::before { content: '▾'; display: inline-block; width: 1.1em; opacity: .7; }
@@ -387,6 +392,7 @@
     body:not(.popout-chart) .detail-card.cc-collapsed:not(.chart-fs) > :not(.detail-card-title):not(.detail-card-head),
     .tpl-card.cc-collapsed > :not(h2) { display: none; }
     .detail-card.cc-collapsed .detail-card-title { margin-bottom: 0; }
+    {% endif %}
     .detail-card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted-fg); font-weight: 750; margin-bottom: 9px; }
     .detail-range-buttons { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
     .detail-range-btn {
@@ -524,12 +530,23 @@
     .tpl-hint { color: var(--muted-fg); font-size: 11px; margin: 6px 0; }
     .tpl-card p { font-size: 12px; margin: 8px 0; }
   </style>
+  {% if embedded %}
+  {% include "_theme_head.html" %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='site-nav.css') }}">
+  {% else %}
   <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
+  {% endif %}
 </head>
 <body>
+{% if embedded %}{% include "_site_nav.html" %}{% endif %}
+
 <header>
+  {% if embedded %}
+  <span class="header-title">📈 Tradility</span>
+  {% else %}
   <a class="header-title" href="/">📈 Tradility</a>
   <span class="header-sub">Standalone web application</span>
+  {% endif %}
   <span class="header-meta" id="meta-generated"></span>
 </header>
 
@@ -649,7 +666,7 @@
   </div>
 </section>
 
-<div class="detail-overlay" id="detail-overlay" hidden
+<div class="detail-overlay" id="detail-overlay"{% if embedded %} data-cc="on"{% endif %} hidden
      role="dialog" aria-modal="true" aria-labelledby="detail-dialog-title">
   <section class="detail-panel" id="detail-panel">
     <div class="detail-header">
@@ -2050,8 +2067,8 @@
       </div>
       <form class="target-form" id="target-form" autocomplete="off">
         <input name="target_pct" type="number" step="any" min="0" max="100" value="${r.target_input == null ? '' : esc(String(r.target_input))}" aria-label="Target percent" placeholder="Target %">
-        <span class="orders-sync">${r.mode === 'basket' ? 'of the ' + esc(r.category) + ' basket' : 'of the portfolio'}</span>
-        <button type="submit">Save target</button> <a class="company-link" href="/to-invest">Open To Invest ↗</a>
+        <span class="orders-sync">${r.mode === 'basket' ? 'of the ' + esc(r.category) + ' basket' : 'of the portfolio'}{% if embedded %} · the other targets rescale so the total stays 100%{% endif %}</span>
+        <button type="submit">Save target</button> <a class="company-link" href="/to-invest{% if embedded %}#invest-item-${encodeURIComponent(r.ticker || ticker)}{% endif %}">{% if embedded %}Open this row in To Invest{% else %}Open To Invest{% endif %} ↗</a>
       </form><div class="order-error" id="target-error" role="alert"></div>`;
   }
 
@@ -4020,6 +4037,7 @@
     tplDraft = tplBlank(); tplPreview = null; renderBuilder(); renderRun(); renderSaved();
   });
 
+  {% if not embedded %}
   // Any card (a ticker's detail cards, the Order templates tab's cards) folds to its title row. The title is
   // the handle; state lives in a stored list so it survives re-renders, ticker changes and reloads. The cards
   // are rebuilt often, so a cheap observer re-applies it after DOM changes instead of binding per card.
@@ -4062,6 +4080,7 @@
     apply();
   }
   initCollapsibleCards();
+  {% endif %}
 
   loadData().then(() => {
     startLive();
