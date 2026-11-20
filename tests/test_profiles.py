@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from tradility.profiles import load_company_profiles, normalize_yfinance_profile
 
@@ -28,7 +28,7 @@ def test_normalize_profile_keeps_sourced_fields_and_does_not_invent_vision():
     profile = normalize_yfinance_profile(
         "EXM",
         _raw_profile(),
-        retrieved_at=datetime(2026, 11, 1, tzinfo=timezone.utc),
+        retrieved_at=datetime(2026, 11, 1, tzinfo=UTC),
     )
 
     assert profile["canonical_name"] == "Example Systems, Inc."
@@ -53,7 +53,7 @@ def test_normalize_profile_rejects_unsafe_website_scheme():
 def test_profile_cache_refreshes_once_then_reuses_fresh_entry(tmp_path):
     cache = tmp_path / "profiles.json"
     calls: list[str] = []
-    now = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 1, tzinfo=UTC)
 
     def fetcher(ticker: str) -> dict:
         calls.append(ticker)
@@ -75,7 +75,7 @@ def test_profile_cache_refreshes_once_then_reuses_fresh_entry(tmp_path):
 
 def test_stale_profile_remains_available_when_refresh_fails(tmp_path):
     cache = tmp_path / "profiles.json"
-    old = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    old = datetime(2026, 9, 1, tzinfo=UTC)
     initial = load_company_profiles(
         ["EXM"], cache_path=cache, now=old, fetcher=lambda _ticker: _raw_profile()
     )
@@ -86,7 +86,7 @@ def test_stale_profile_remains_available_when_refresh_fails(tmp_path):
     result = load_company_profiles(
         ["EXM"],
         cache_path=cache,
-        now=datetime(2026, 11, 1, tzinfo=timezone.utc),
+        now=datetime(2026, 11, 1, tzinfo=UTC),
         fetcher=failing_fetcher,
     )
 

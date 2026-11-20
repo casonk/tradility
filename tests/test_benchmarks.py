@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pandas as pd
 
@@ -35,7 +35,7 @@ def test_benchmarks_are_fetched_once_cached_and_tolerate_a_bad_index(tmp_path):
     def symbols(kind, key):
         return "BAD" if key == "broken" else f"^{kind[:3]}-{key}"
 
-    now = datetime(2026, 11, 6, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 6, tzinfo=UTC)
     kwargs = {
         "cache_path": cache,
         "returns_fn": _returns,
