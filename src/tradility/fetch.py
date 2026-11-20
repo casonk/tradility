@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import yfinance as yf
 
+from tradility.dividends import (
+    DividendFn,
+    adjust_for_dividends,
+    fetch_yfinance_dividends,
+    load_dividends,
+)
 from tradility.sources.schwab import fetch_schwab_ohlcv, resolve_access_token
 
 
@@ -19,6 +26,10 @@ class OHLCVResult:
     error: str = ""
     source: str = ""
     fallback_reason: str = ""
+    # True when Close is a total-return series (dividends reinvested), as yfinance's is; False
+    # for a raw Schwab close whose dividend history could not be applied.
+    dividend_adjusted: bool = False
+    adjustment_note: str = ""
 
     @property
     def ok(self) -> bool:
@@ -34,6 +45,8 @@ def fetch_ohlcv(
     schwab_tickers: set[str] | None = None,
     schwab_access_token: str = "",
     schwab_token_command: str = "",
+    dividend_cache_path: Path | None = None,
+    dividends_fn: DividendFn = fetch_yfinance_dividends,
 ) -> dict[str, OHLCVResult]:
     """Download OHLCV bars, preferring Schwab when configured.
 
@@ -43,6 +56,10 @@ def fetch_ohlcv(
     ``source=auto`` uses Schwab for eligible equity tickers when an access
     token is available, then falls back ticker-by-ticker to yfinance. Crypto
     and other explicitly ineligible tickers always use yfinance.
+
+    Schwab bars are raw closes, so with ``dividend_cache_path`` they are dividend-adjusted (see
+    :mod:`tradility.dividends`) to match yfinance's total-return bars; without it they stay raw
+    and ``dividend_adjusted`` is False.
     """
     normalized_source = source.strip().lower()
     if normalized_source not in {"auto", "schwab", "yfinance"}:
@@ -80,6 +97,8 @@ def fetch_ohlcv(
                     error=schwab_result.error,
                     source="schwab",
                 )
+            if dividend_cache_path is not None:
+                _adjust_schwab_bars(results, dividend_cache_path, dividends_fn)
         else:
             schwab_failure = token_resolution.error or "Schwab access token unavailable"
 
@@ -115,6 +134,23 @@ def fetch_ohlcv(
             yahoo_result.fallback_reason = schwab_failure
         results[ticker] = yahoo_result
     return results
+
+
+def _adjust_schwab_bars(
+    results: dict[str, OHLCVResult], cache_path: Path, dividends_fn: DividendFn
+) -> None:
+    """Make each good Schwab result a total-return series, noting any ticker left raw."""
+    tickers = sorted(t for t, r in results.items() if r.source == "schwab" and r.ok)
+    if not tickers:
+        return
+    dividends, errors = load_dividends(tickers, cache_path=cache_path, fetch_fn=dividends_fn)
+    for ticker in tickers:
+        result = results[ticker]
+        if ticker in errors:
+            result.adjustment_note = f"dividend history unavailable: {errors[ticker]}"
+            continue
+        result.df = adjust_for_dividends(result.df, dividends.get(ticker, []))
+        result.dividend_adjusted = True
 
 
 def normalize_history_period(value: str) -> str:
@@ -171,7 +207,7 @@ def _fetch_yfinance_ohlcv(
             if df.empty:
                 results[t] = OHLCVResult(ticker=t, error="no usable bars", source="yfinance")
                 continue
-            results[t] = OHLCVResult(ticker=t, df=df, source="yfinance")
+            results[t] = OHLCVResult(ticker=t, df=df, source="yfinance", dividend_adjusted=True)
         except Exception as exc:
             results[t] = OHLCVResult(ticker=t, error=str(exc), source="yfinance")
     return results
