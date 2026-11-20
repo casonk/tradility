@@ -83,7 +83,8 @@
   link or reverse-proxy the standalone Tradility service, add optional provider
   contracts for To Invest targets and consolidated finances, then remove its
   duplicated Tradility template and domain API implementations after the
-  standalone deployment is verified.
+  standalone deployment is verified. (The page template is now a synced copy of
+  the packaged one, not a duplicate to maintain.)
 - [x] **Standalone Tradility web application** — `tradility-web` serves the
   packaged indicator/detail UI and Tradility-owned analysis, order, refresh,
   account, transfer, and trader-proxy APIs without Clockwork.
@@ -91,6 +92,15 @@
   `tradility-analysis.json`; retained temporarily as a migration fallback.
 
 ## Done
+
+- [x] [manual:2026-11-20] **Dividend-adjust Schwab price history** — Schwab's daily bars were raw (split-adjusted)
+  closes, so the 255+ Schwab tickers showed price-only returns next to total-return benchmarks. Bars are now scaled
+  at each ex-dividend date the way Yahoo does (matches its adjusted close exactly), with dividends cached daily and
+  `--raw-prices` as the opt-out (#86). The 2026-11-20 refresh shows 325 adjusted, 0 raw.
+- [x] [manual:2026-11-19] **One page template for standalone and Clockwork** — `templates/index.html` has an
+  `embedded` switch; Clockwork carries a synced copy with a drift test (#85, Clockwork #230).
+- [x] [manual:2026-11-20] **`run-job.sh` waits from job creation** — a failing log-follow no longer starts the
+  300 s clock early and kills a running refresh; `JOB_WAIT` defaults to 1500 s (#88).
 
 - [x] [manual:2026-11-06] **Order templates on the Clockwork page** — the same tab on `/to-tradility` (Clockwork
   #176), sharing the saved templates with the standalone application.
