@@ -7,6 +7,9 @@ export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/k3s.yaml}"
 KUBECTL="${KUBECTL:-kubectl}"
 NS=tradility
 JOB="run-$(date +%Y%m%d-%H%M%S)"
+# The wait is measured from here, not from when log-following returns: that call can fail at once (for example on a
+# host out of inotify watches) and must not start the clock early. It matches the CronJob's activeDeadlineSeconds.
+DEADLINE=$((SECONDS + ${JOB_WAIT:-1500}))
 
 # If systemd stops the unit (time limit, `systemctl stop`), stop the pod too instead of leaving it running.
 # shellcheck disable=SC2329  # invoked by the trap below
@@ -18,12 +21,11 @@ echo "started job $JOB"
 "$KUBECTL" -n "$NS" wait --for=condition=Ready "pod" -l "job-name=$JOB" --timeout=300s >/dev/null 2>&1 || true
 "$KUBECTL" -n "$NS" logs -f -l "job-name=$JOB" --tail=-1 || true
 
-deadline=$((SECONDS + 300))
 while :; do
   ok="$("$KUBECTL" -n "$NS" get job "$JOB" -o jsonpath='{.status.succeeded}' 2>/dev/null || true)"
   bad="$("$KUBECTL" -n "$NS" get job "$JOB" -o jsonpath='{.status.failed}' 2>/dev/null || true)"
   if [ "${ok:-0}" = "1" ]; then echo "job $JOB succeeded"; exit 0; fi
   if [ -n "${bad:-}" ] && [ "${bad:-0}" != "0" ]; then echo "job $JOB failed" >&2; exit 1; fi
-  [ "$SECONDS" -lt "$deadline" ] || { echo "job $JOB did not finish" >&2; cleanup; exit 1; }
+  [ "$SECONDS" -lt "$DEADLINE" ] || { echo "job $JOB did not finish" >&2; cleanup; exit 1; }
   sleep 5
 done
