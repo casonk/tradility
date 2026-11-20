@@ -5,12 +5,23 @@ import subprocess
 import unittest
 from pathlib import Path
 
+import jinja2
+
 PAGE = Path(__file__).resolve().parents[1] / "src" / "tradility" / "templates" / "index.html"
+
+
+def render_page(**context) -> str:
+    """The page as served: the template has an ``embedded`` switch for Clockwork's copy."""
+    env = jinja2.Environment(
+        loader=jinja2.DictLoader({"_theme_head.html": "", "_site_nav.html": ""})
+    )
+    env.globals["url_for"] = lambda endpoint, **kw: "/static/" + kw.get("filename", "")
+    return env.from_string(PAGE.read_text()).render(**context)
 
 
 class PaneTemplatesTest(unittest.TestCase):
     def setUp(self):
-        self.html = PAGE.read_text()
+        self.html = render_page()
 
     def test_ticket_has_a_ladder_container_and_template_loading(self):
         for needle in (
@@ -36,16 +47,20 @@ class PaneTemplatesTest(unittest.TestCase):
             self.assertIn(needle, self.html)
 
     def test_inline_script_parses(self):
-        script = re.findall(r"<script>(.*?)</script>", self.html, re.S)[0]
-        path = Path(self._testMethodName + ".js")
-        try:
-            path.write_text(script)
-            result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
-        except FileNotFoundError:
-            self.skipTest("node is not installed")
-        finally:
-            path.unlink(missing_ok=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        for embedded in (False, True):
+            html = render_page(embedded=embedded)
+            script = re.findall(r"<script>(.*?)</script>", html, re.S)[0]
+            path = Path(self._testMethodName + ".js")
+            try:
+                path.write_text(script)
+                result = subprocess.run(
+                    ["node", "--check", str(path)], capture_output=True, text=True
+                )
+            except FileNotFoundError:
+                self.skipTest("node is not installed")
+            finally:
+                path.unlink(missing_ok=True)
+            self.assertEqual(result.returncode, 0, f"embedded={embedded}: {result.stderr}")
 
 
 if __name__ == "__main__":
