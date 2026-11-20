@@ -112,10 +112,10 @@ def _freshness(data: dict[str, Any], stale_hours: int) -> dict[str, Any]:
         try:
             generated = datetime.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
             if generated.tzinfo is None:
-                generated = generated.replace(tzinfo=datetime.timezone.utc)
+                generated = generated.replace(tzinfo=datetime.UTC)
             age_seconds = max(
                 0,
-                int((datetime.datetime.now(datetime.timezone.utc) - generated).total_seconds()),
+                int((datetime.datetime.now(datetime.UTC) - generated).total_seconds()),
             )
         except ValueError:
             pass

@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -83,7 +83,7 @@ def load_dividends(
 
     A failed download reuses a stale cached entry rather than leaving the ticker unadjusted.
     """
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     cache = _load_cache(cache_path)
     found: dict[str, list[tuple[str, float]]] = {}
     errors: dict[str, str] = {}

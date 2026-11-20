@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -423,7 +423,7 @@ def analyze_tickers(
     }
 
     return {
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "history_period": resolved_period,
         "period_days": int(resolved_period[:-1]) if resolved_period.endswith("d") else None,
         "rsi_period": RSI_PERIOD,
